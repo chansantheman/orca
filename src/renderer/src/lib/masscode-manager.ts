@@ -2,9 +2,9 @@ import type { MassCodeSnippet, MassCodeFolder } from '../../../shared/types'
 
 /**
  * massCode v5+ Markdown Vault structure:
- * - Each folder in the app is a physical folder on disk.
+ * - Root folders define types: code, notes, http, math, tools.
+ * - Each type folder contains user folders or .masscode/inbox.
  * - Each snippet is a .md file with YAML frontmatter.
- * - Snippets have a 'type' field: 1=Code, 2=Notes, 3=HTTP, 4=Math, 5=Tools
  */
 
 export type MassCodeType = 1 | 2 | 3 | 4 | 5
@@ -13,6 +13,7 @@ export type MassCodeExtendedSnippet = MassCodeSnippet & {
   isFavorite: boolean
   isTrash: boolean
   type: MassCodeType
+  inInbox: boolean
 }
 
 export type MassCodeData = {
@@ -21,62 +22,87 @@ export type MassCodeData = {
   tags: string[]
 }
 
+const TYPE_MAP: Record<string, MassCodeType> = {
+  code: 1,
+  notes: 2,
+  http: 3,
+  math: 4,
+  tools: 5
+}
+
 export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData> {
   const folders: MassCodeFolder[] = []
   const snippets: MassCodeExtendedSnippet[] = []
   const tagsSet = new Set<string>()
 
-  // Try to read .state.json for favorites
-  let favorites: string[] = []
+  // Try to read .state.json for favorites/other state
+  let stateFavorites: string[] = []
   try {
     const stateContent = await window.api.fs.readFile({ filePath: `${vaultPath}/.state.json` })
     const state = JSON.parse(stateContent.content)
-    favorites = state.favorites || []
+    stateFavorites = state.favorites || []
   } catch {
-    // .state.json might not exist or be accessible
+    // ignore
   }
 
   // Helper to recursively walk the vault
-  async function walk(currentPath: string, parentId: string | null = null): Promise<void> {
+  async function walk(
+    currentPath: string,
+    parentId: string | null = null,
+    currentType: MassCodeType | null = null
+  ): Promise<void> {
     const entries = await window.api.fs.readDir({ dirPath: currentPath })
 
     for (const entry of entries) {
       const fullPath = `${currentPath}/${entry.name}`
-      // Skip hidden files/folders
-      if (entry.name.startsWith('.')) {
-        continue
+      const relativePath = fullPath.replace(`${vaultPath}/`, '')
+      const pathSegments = relativePath.split('/')
+
+      // Determine type from root folder if not already set
+      let detectedType = currentType
+      if (!detectedType && pathSegments.length > 0) {
+        detectedType = TYPE_MAP[pathSegments[0].toLowerCase()] || 1
       }
 
       if (entry.isDirectory) {
-        // massCode v5 has Library, Inbox, Trash at the root.
-        // We want to skip pushing these as regular user folders if they are at the root.
-        const isRootFolder = currentPath === vaultPath
-        const folderName = entry.name.toLowerCase()
-        const isSystemFolder =
-          isRootFolder &&
-          (folderName === 'library' || folderName === 'inbox' || folderName === 'trash')
+        // Skip .git or other system folders, but allow .masscode/inbox
+        if (entry.name.startsWith('.') && entry.name !== '.masscode') {
+          continue
+        }
+
+        // Don't add 'code', 'notes', etc. as user folders
+        const isRootTypeFolder = currentPath === vaultPath && TYPE_MAP[entry.name.toLowerCase()]
 
         const folderId = fullPath
-        if (!isSystemFolder) {
+        if (!isRootTypeFolder && entry.name !== '.masscode' && entry.name !== 'inbox') {
           folders.push({
             id: folderId,
             name: entry.name,
-            parentId
+            parentId: currentPath === vaultPath || isRootTypeFolder ? null : parentId
           })
         }
 
-        await walk(fullPath, isSystemFolder ? null : folderId)
+        await walk(fullPath, folderId, detectedType)
       } else if (entry.name.endsWith('.md')) {
         try {
           const { content } = await window.api.fs.readFile({ filePath: fullPath })
           const snippet = parseSnippet(content, fullPath, parentId)
           if (snippet) {
+            const isTrash = fullPath.toLowerCase().includes('/trash/')
+            const inInbox = fullPath.toLowerCase().includes('/inbox/')
+
+            // @ts-ignore - use metadata favorites if present
+            const isFavoriteInFile = snippet.isFavorites === 1 || snippet.isFavorite === true
+
             const extendedSnippet: MassCodeExtendedSnippet = {
               ...snippet,
+              type: detectedType || 1,
               isFavorite:
-                favorites.includes(snippet.id) || favorites.includes(entry.name.replace('.md', '')),
-              isTrash: fullPath.includes('/Trash/') || fullPath.includes('/trash/'),
-              type: (snippet as unknown as { type: MassCodeType }).type || 1 // Default to Code if missing
+                isFavoriteInFile ||
+                stateFavorites.includes(snippet.id) ||
+                stateFavorites.includes(entry.name.replace('.md', '')),
+              isTrash,
+              inInbox
             }
             snippets.push(extendedSnippet)
             snippet.tags.forEach((t) => tagsSet.add(t))
@@ -143,8 +169,8 @@ function parseSnippet(
     folderId,
     createdAt: Number(metadata.createdAt) || Date.now(),
     updatedAt: Number(metadata.updatedAt) || Date.now(),
-    // @ts-ignore - attaching type for internal use
-    type: Number(metadata.type) || 1
+    // @ts-ignore - carry extra metadata for internal processing
+    ...metadata
   }
 }
 
@@ -158,13 +184,12 @@ export async function writeMassCodeSnippet(
   const createdAt = snippet.createdAt || Date.now()
   const updatedAt = Date.now()
   const content = snippet.content || ''
-  const type = snippet.type || 1
 
+  // Preserve original metadata if possible, but update key fields
   const frontmatter = [
     '---',
     `name: ${name}`,
     `language: ${language}`,
-    `type: ${type}`,
     `tags: [${tags.join(', ')}]`,
     `createdAt: ${createdAt}`,
     `updatedAt: ${updatedAt}`,
