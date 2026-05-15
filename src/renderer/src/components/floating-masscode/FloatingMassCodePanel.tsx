@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: this experimental bridge owns snippet list, view, and edit modes in one state machine so vault refresh and mode transitions stay local. */
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import hljs from 'highlight.js/lib/common'
 import { useAppStore } from '@/store'
@@ -22,7 +23,6 @@ import {
   Globe,
   Edit2,
   List,
-  GripHorizontal,
   Maximize2,
   Minimize2
 } from 'lucide-react'
@@ -43,12 +43,82 @@ import {
 } from './floating-masscode-panel-bounds'
 
 type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder'
-const FLOATING_MASSCODE_NO_DRAG_SELECTOR =
-  'button,input,textarea,select,a,[role="menuitem"],[data-floating-masscode-no-drag]'
 
-function isFloatingMassCodeDragTarget(target: EventTarget): boolean {
-  return !(target instanceof HTMLElement && target.closest(FLOATING_MASSCODE_NO_DRAG_SELECTOR))
+const floatingMassCodeSurfaceClassName =
+  'fixed z-50 flex min-h-[280px] min-w-[420px] flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)]'
+const floatingMassCodeHeaderClassName =
+  'flex h-9 shrink-0 items-center justify-between border-b border-border bg-[var(--bg-titlebar,var(--card))]'
+const floatingMassCodeControlButtonClassName =
+  'border-border bg-secondary text-secondary-foreground shadow-xs hover:bg-accent hover:text-accent-foreground'
+
+type MassCodeLanguageOption = { value: string; label: string }
+
+const MASSCODE_BASE_LANGUAGE_OPTIONS: MassCodeLanguageOption[] = [
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'plaintext', label: 'Plain Text' }
+]
+
+function toLanguageLabel(languageId: string): string {
+  const normalized = languageId.trim()
+  const upperCaseLabels: Record<string, string> = {
+    c: 'C',
+    cpp: 'C++',
+    csharp: 'C#',
+    css: 'CSS',
+    html: 'HTML',
+    java: 'Java',
+    javascript: 'JavaScript',
+    json: 'JSON',
+    jsx: 'JSX',
+    lua: 'Lua',
+    markdown: 'Markdown',
+    php: 'PHP',
+    python: 'Python',
+    r: 'R',
+    ruby: 'Ruby',
+    rust: 'Rust',
+    scala: 'Scala',
+    shell: 'Shell',
+    sql: 'SQL',
+    swift: 'Swift',
+    toml: 'TOML',
+    tsx: 'TSX',
+    typescript: 'TypeScript',
+    xml: 'XML',
+    yaml: 'YAML'
+  }
+
+  if (upperCaseLabels[normalized]) {
+    return upperCaseLabels[normalized]
+  }
+
+  const withSpaces = normalized.replace(/[-_]+/g, ' ')
+  return withSpaces
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ')
 }
+
+function buildMassCodeLanguageOptions(): MassCodeLanguageOption[] {
+  const map = new Map<string, string>()
+
+  for (const option of MASSCODE_BASE_LANGUAGE_OPTIONS) {
+    map.set(option.value, option.label)
+  }
+
+  for (const languageId of hljs.listLanguages()) {
+    if (!map.has(languageId)) {
+      map.set(languageId, toLanguageLabel(languageId))
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+const MASSCODE_LANGUAGE_OPTIONS = buildMassCodeLanguageOptions()
 
 export function FloatingMassCodePanel({
   open,
@@ -76,13 +146,6 @@ export function FloatingMassCodePanel({
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const codeRef = useRef<HTMLElement>(null)
   const restoreBoundsRef = useRef<FloatingMassCodePanelBounds | null>(null)
-  const dragRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    left: number
-    top: number
-  } | null>(null)
 
   const refreshData = useCallback(() => {
     if (vaultPath) {
@@ -161,9 +224,7 @@ export function FloatingMassCodePanel({
     if (!pathPart) {
       return []
     }
-    return data.folders.filter((f) =>
-      f.id.replaceAll('\\', '/').toLowerCase().includes(pathPart)
-    )
+    return data.folders.filter((f) => f.id.replaceAll('\\', '/').toLowerCase().includes(pathPart))
   }, [data, selectedType])
 
   const handleCopy = (s: MassCodeExtendedSnippet) => {
@@ -188,43 +249,6 @@ export function FloatingMassCodePanel({
     } catch (err) {
       toast.error('Failed to save snippet')
       console.error(err)
-    }
-  }
-
-  const handleDragStart = (e: React.PointerEvent) => {
-    if (maximized) {
-      return
-    }
-    if (e.button !== 0 || !isFloatingMassCodeDragTarget(e.target)) {
-      return
-    }
-    dragRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      left: bounds.left,
-      top: bounds.top
-    }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-
-  const handleDragMove = (e: React.PointerEvent) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== e.pointerId) {
-      return
-    }
-    setBounds((prev) =>
-      clampFloatingMassCodeBounds({
-        ...prev,
-        left: drag.left + e.clientX - drag.startX,
-        top: drag.top + e.clientY - drag.startY
-      })
-    )
-  }
-
-  const handleDragEnd = (e: React.PointerEvent) => {
-    if (dragRef.current?.pointerId === e.pointerId) {
-      dragRef.current = null
     }
   }
 
@@ -259,42 +283,43 @@ export function FloatingMassCodePanel({
     actionIcon?: React.ReactNode,
     onAction?: () => void
   ) => (
-      <div
-        className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
-        onPointerCancel={handleDragEnd}
-        onDoubleClick={(e) => {
-          if (e.button !== 0 || !isFloatingMassCodeDragTarget(e.target)) {
-            return
-          }
-          e.preventDefault()
-          toggleMaximized()
-        }}
-      >
-        <div className="flex items-center gap-2" data-floating-masscode-no-drag>
-        <Button variant="ghost" size="icon-xs" onClick={onBack}>
+    <div className={floatingMassCodeHeaderClassName}>
+      <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
+        <Button variant="ghost" size="icon-xs" onClick={onBack} aria-label="Back to snippets">
           <ArrowLeft className="size-3.5" />
         </Button>
         <span className="text-xs font-medium truncate max-w-[400px]">{title}</span>
       </div>
-      <div className="flex items-center gap-1" data-floating-masscode-no-drag>
-        <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
+      <div className="flex items-center gap-1 px-2">
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon-xs"
+          className={floatingMassCodeControlButtonClassName}
           onClick={toggleMaximized}
           aria-label={maximized ? 'Restore panel size' : 'Maximize panel'}
+          aria-pressed={maximized}
         >
           {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
         </Button>
-        {actionIcon && (
-          <Button variant="ghost" size="icon-xs" onClick={onAction}>
+        {actionIcon && onAction ? (
+          <Button
+            variant="outline"
+            size="icon-xs"
+            className={floatingMassCodeControlButtonClassName}
+            onClick={onAction}
+          >
             {actionIcon}
           </Button>
+        ) : (
+          actionIcon
         )}
-        <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          className={floatingMassCodeControlButtonClassName}
+          onClick={() => onOpenChange(false)}
+          aria-label="Close massCode snippets"
+        >
           <X className="size-3.5" />
         </Button>
       </div>
@@ -304,7 +329,7 @@ export function FloatingMassCodePanel({
   if (viewingSnippet) {
     return (
       <div
-        className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200 w-[750px] h-[500px]"
+        className={cn(floatingMassCodeSurfaceClassName, 'animate-in fade-in duration-200')}
         style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       >
         {renderHeader(
@@ -357,7 +382,7 @@ export function FloatingMassCodePanel({
   if (editingSnippet) {
     return (
       <div
-        className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden w-[750px] h-[500px]"
+        className={floatingMassCodeSurfaceClassName}
         style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       >
         {renderHeader(
@@ -386,11 +411,17 @@ export function FloatingMassCodePanel({
               onChange={(e) => setEditingSnippet({ ...editingSnippet, language: e.target.value })}
               className="w-full h-8 px-2 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             >
-              <option value="markdown">Markdown</option>
-              <option value="javascript">JavaScript</option>
-              <option value="typescript">TypeScript</option>
-              <option value="swift">Swift</option>
-              <option value="python">Python</option>
+              {MASSCODE_LANGUAGE_OPTIONS.map((languageOption) => (
+                <option key={languageOption.value} value={languageOption.value}>
+                  {languageOption.label}
+                </option>
+              ))}
+              {editingSnippet.language &&
+              !MASSCODE_LANGUAGE_OPTIONS.some(
+                (languageOption) => languageOption.value === editingSnippet.language
+              ) ? (
+                <option value={editingSnippet.language}>{editingSnippet.language}</option>
+              ) : null}
             </select>
           </div>
           <div className="space-y-1.5 flex flex-col flex-1 min-h-0">
@@ -410,18 +441,12 @@ export function FloatingMassCodePanel({
 
   return (
     <div
-      className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300 w-[750px] h-[500px]"
+      className={cn(floatingMassCodeSurfaceClassName, 'animate-in fade-in duration-200')}
       style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       data-floating-masscode-panel
     >
-      <div
-        className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
-        onPointerCancel={handleDragEnd}
-      >
-        <div className="flex items-center gap-2 px-2 flex-1" data-floating-masscode-no-drag>
+      <div className={floatingMassCodeHeaderClassName}>
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
           <Search className="size-3.5 text-muted-foreground" />
           <Input
             value={search}
@@ -430,9 +455,24 @@ export function FloatingMassCodePanel({
             className="h-7 border-none bg-transparent focus-visible:ring-0 text-sm p-0 shadow-none"
           />
         </div>
-        <div className="flex items-center gap-1" data-floating-masscode-no-drag>
-          <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
-          <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
+        <div className="flex items-center gap-1 px-2">
+          <Button
+            variant="outline"
+            size="icon-xs"
+            className={floatingMassCodeControlButtonClassName}
+            onClick={toggleMaximized}
+            aria-label={maximized ? 'Restore panel size' : 'Maximize panel'}
+            aria-pressed={maximized}
+          >
+            {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-xs"
+            className={floatingMassCodeControlButtonClassName}
+            onClick={() => onOpenChange(false)}
+            aria-label="Close massCode snippets"
+          >
             <X className="size-3.5" />
           </Button>
         </div>
