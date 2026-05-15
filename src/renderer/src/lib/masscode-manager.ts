@@ -4,11 +4,15 @@ import type { MassCodeSnippet, MassCodeFolder } from '../../../shared/types'
  * massCode v5+ Markdown Vault structure:
  * - Each folder in the app is a physical folder on disk.
  * - Each snippet is a .md file with YAML frontmatter.
+ * - Snippets have a 'type' field: 1=Code, 2=Notes, 3=HTTP, 4=Math, 5=Tools
  */
+
+export type MassCodeType = 1 | 2 | 3 | 4 | 5
 
 export type MassCodeExtendedSnippet = MassCodeSnippet & {
   isFavorite: boolean
   isTrash: boolean
+  type: MassCodeType
 }
 
 export type MassCodeData = {
@@ -38,19 +42,30 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
 
     for (const entry of entries) {
       const fullPath = `${currentPath}/${entry.name}`
-      // Skip hidden folders
+      // Skip hidden files/folders
       if (entry.name.startsWith('.')) {
         continue
       }
 
       if (entry.isDirectory) {
+        // massCode v5 has Library, Inbox, Trash at the root.
+        // We want to skip pushing these as regular user folders if they are at the root.
+        const isRootFolder = currentPath === vaultPath
+        const folderName = entry.name.toLowerCase()
+        const isSystemFolder =
+          isRootFolder &&
+          (folderName === 'library' || folderName === 'inbox' || folderName === 'trash')
+
         const folderId = fullPath
-        folders.push({
-          id: folderId,
-          name: entry.name,
-          parentId
-        })
-        await walk(fullPath, folderId)
+        if (!isSystemFolder) {
+          folders.push({
+            id: folderId,
+            name: entry.name,
+            parentId
+          })
+        }
+
+        await walk(fullPath, isSystemFolder ? null : folderId)
       } else if (entry.name.endsWith('.md')) {
         try {
           const { content } = await window.api.fs.readFile({ filePath: fullPath })
@@ -60,7 +75,8 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
               ...snippet,
               isFavorite:
                 favorites.includes(snippet.id) || favorites.includes(entry.name.replace('.md', '')),
-              isTrash: fullPath.includes('/Trash/') || fullPath.includes('/trash/')
+              isTrash: fullPath.includes('/Trash/') || fullPath.includes('/trash/'),
+              type: (snippet as unknown as { type: MassCodeType }).type || 1 // Default to Code if missing
             }
             snippets.push(extendedSnippet)
             snippet.tags.forEach((t) => tagsSet.add(t))
@@ -126,13 +142,15 @@ function parseSnippet(
     tags: (metadata.tags as string[]) || [],
     folderId,
     createdAt: Number(metadata.createdAt) || Date.now(),
-    updatedAt: Number(metadata.updatedAt) || Date.now()
+    updatedAt: Number(metadata.updatedAt) || Date.now(),
+    // @ts-ignore - attaching type for internal use
+    type: Number(metadata.type) || 1
   }
 }
 
 export async function writeMassCodeSnippet(
   filePath: string,
-  snippet: Partial<MassCodeSnippet>
+  snippet: Partial<MassCodeExtendedSnippet>
 ): Promise<void> {
   const name = snippet.name || 'Untitled'
   const language = snippet.language || 'markdown'
@@ -140,11 +158,13 @@ export async function writeMassCodeSnippet(
   const createdAt = snippet.createdAt || Date.now()
   const updatedAt = Date.now()
   const content = snippet.content || ''
+  const type = snippet.type || 1
 
   const frontmatter = [
     '---',
     `name: ${name}`,
     `language: ${language}`,
+    `type: ${type}`,
     `tags: [${tags.join(', ')}]`,
     `createdAt: ${createdAt}`,
     `updatedAt: ${updatedAt}`,

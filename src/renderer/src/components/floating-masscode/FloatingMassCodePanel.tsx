@@ -6,7 +6,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Search,
   X,
-  Edit2,
   Plus,
   Folder,
   ArrowLeft,
@@ -14,21 +13,26 @@ import {
   ChevronRight,
   Inbox,
   Star,
-  Library,
   Trash2,
   Tag,
   Copy,
-  Check
+  Check,
+  Code,
+  FileText,
+  Globe,
+  Sigma,
+  Wrench
 } from 'lucide-react'
 import {
   fetchMassCodeData,
   writeMassCodeSnippet,
   type MassCodeData,
-  type MassCodeExtendedSnippet
+  type MassCodeExtendedSnippet,
+  type MassCodeType
 } from '@/lib/masscode-manager'
 import { toast } from 'sonner'
 
-type SidebarCategory = 'library' | 'inbox' | 'favorites' | 'trash' | 'tags' | 'folders'
+type SidebarCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'tags' | 'folders' | 'type'
 
 export function FloatingMassCodePanel({
   open,
@@ -41,7 +45,8 @@ export function FloatingMassCodePanel({
   const previewLines = useAppStore((s) => s.settings?.experimentalMassCodePreviewLines ?? 1)
   const [data, setData] = useState<MassCodeData | null>(null)
   const [search, setSearch] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<SidebarCategory>('library')
+  const [selectedCategory, setSelectedCategory] = useState<SidebarCategory>('type')
+  const [selectedType, setSelectedType] = useState<MassCodeType>(1)
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [editingSnippet, setEditingSnippet] = useState<Partial<MassCodeExtendedSnippet> | null>(
@@ -52,12 +57,7 @@ export function FloatingMassCodePanel({
 
   const refreshData = useCallback(() => {
     if (vaultPath) {
-      void fetchMassCodeData(vaultPath)
-        .then(setData)
-        .catch((err) => {
-          toast.error('Failed to load massCode snippets')
-          console.error(err)
-        })
+      void fetchMassCodeData(vaultPath).then(setData).catch(console.error)
     }
   }, [vaultPath])
 
@@ -72,17 +72,17 @@ export function FloatingMassCodePanel({
       return []
     }
     return data.snippets.filter((s) => {
-      // Basic search
       const matchesSearch =
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.content.toLowerCase().includes(search.toLowerCase())
       if (!matchesSearch) {
         return false
       }
-
-      // Category filters
       if (selectedCategory === 'inbox') {
-        return s.folderId === null || s.id.includes('/Inbox/')
+        return (
+          (s.folderId === null || s.id.includes('/Inbox/') || s.id.includes('/inbox/')) &&
+          !s.isTrash
+        )
       }
       if (selectedCategory === 'favorites') {
         return s.isFavorite && !s.isTrash
@@ -96,11 +96,12 @@ export function FloatingMassCodePanel({
       if (selectedCategory === 'folders' && selectedFolderId) {
         return s.folderId === selectedFolderId && !s.isTrash
       }
-
-      // Default: Library (all non-trash)
+      if (selectedCategory === 'type') {
+        return s.type === selectedType && !s.isTrash
+      }
       return !s.isTrash
     })
-  }, [data, search, selectedCategory, selectedFolderId, selectedTag])
+  }, [data, search, selectedCategory, selectedFolderId, selectedTag, selectedType])
 
   if (!open) {
     return null
@@ -131,62 +132,64 @@ export function FloatingMassCodePanel({
     }
   }
 
-  // --- Views ---
+  const renderHeader = (
+    title: string,
+    onBack: () => void,
+    actionIcon?: React.ReactNode,
+    onAction?: () => void
+  ) => (
+    <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon-xs" onClick={onBack}>
+          <ArrowLeft className="size-3.5" />
+        </Button>
+        <span className="text-xs font-medium truncate max-w-[400px]">{title}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        {actionIcon && (
+          <Button variant="ghost" size="icon-xs" onClick={onAction}>
+            {actionIcon}
+          </Button>
+        )}
+        <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
+          <X className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
 
   if (viewingSnippet) {
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
         data-floating-masscode-panel
       >
-        <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon-xs" onClick={() => setViewingSnippet(null)}>
-              <ArrowLeft className="size-3.5" />
-            </Button>
-            <span className="text-xs font-medium truncate max-w-[400px]">
-              {viewingSnippet.name}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon-xs" onClick={() => handleCopy(viewingSnippet)}>
-              {copiedId === viewingSnippet.id ? (
-                <Check className="size-3.5 text-green-500" />
-              ) : (
-                <Copy className="size-3.5" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => {
-                setEditingSnippet(viewingSnippet)
-                setViewingSnippet(null)
-              }}
-            >
-              <Edit2 className="size-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
-              <X className="size-3.5" />
-            </Button>
-          </div>
-        </div>
+        {renderHeader(
+          viewingSnippet.name,
+          () => setViewingSnippet(null),
+          copiedId === viewingSnippet.id ? (
+            <Check className="size-3.5 text-green-500" />
+          ) : (
+            <Copy className="size-3.5" />
+          ),
+          () => handleCopy(viewingSnippet)
+        )}
         <div className="flex-1 p-0 overflow-hidden flex flex-col">
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-secondary/10">
             <span className="text-[10px] font-mono text-muted-foreground uppercase">
               {viewingSnippet.language}
             </span>
-            {viewingSnippet.tags.map((tag) => (
+            {viewingSnippet.tags.map((t) => (
               <span
-                key={tag}
+                key={t}
                 className="text-[10px] bg-accent px-1.5 py-0.5 rounded text-accent-foreground"
               >
-                {tag}
+                {t}
               </span>
             ))}
           </div>
           <ScrollArea className="flex-1">
-            <pre className="p-4 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed select-text">
+            <pre className="p-4 text-xs font-mono whitespace-pre-wrap select-text">
               {viewingSnippet.content}
             </pre>
           </ScrollArea>
@@ -198,20 +201,15 @@ export function FloatingMassCodePanel({
   if (editingSnippet) {
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
         data-floating-masscode-panel
       >
-        <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
-          <Button variant="ghost" size="icon-xs" onClick={() => setEditingSnippet(null)}>
-            <ArrowLeft className="size-3.5" />
-          </Button>
-          <span className="text-xs font-medium">
-            {editingSnippet.id ? 'Edit Snippet' : 'New Snippet'}
-          </span>
-          <Button variant="ghost" size="icon-xs" onClick={handleSave}>
-            <Save className="size-3.5" />
-          </Button>
-        </div>
+        {renderHeader(
+          editingSnippet.id ? 'Edit Snippet' : 'New Snippet',
+          () => setEditingSnippet(null),
+          <Save className="size-3.5" />,
+          () => void handleSave()
+        )}
         <div className="flex-1 p-4 space-y-4 overflow-auto">
           <div className="space-y-1.5">
             <label className="text-[10px] uppercase text-muted-foreground font-semibold">
@@ -252,7 +250,7 @@ export function FloatingMassCodePanel({
             <textarea
               value={editingSnippet.content || ''}
               onChange={(e) => setEditingSnippet({ ...editingSnippet, content: e.target.value })}
-              className="flex-1 min-h-[250px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex-1 min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Paste code here..."
             />
           </div>
@@ -263,7 +261,7 @@ export function FloatingMassCodePanel({
 
   return (
     <div
-      className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300"
+      className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300"
       data-floating-masscode-panel
     >
       <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
@@ -280,24 +278,68 @@ export function FloatingMassCodePanel({
           <X className="size-3.5" />
         </Button>
       </div>
-
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
         <div className="w-40 border-r border-border bg-secondary/10 flex flex-col">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-4">
-              {/* Main Categories */}
               <div className="space-y-1">
                 <SidebarItem
-                  active={selectedCategory === 'library'}
+                  active={selectedCategory === 'type' && selectedType === 1}
                   onClick={() => {
-                    setSelectedCategory('library')
+                    setSelectedCategory('type')
+                    setSelectedType(1)
                     setSelectedFolderId(null)
                     setSelectedTag(null)
                   }}
-                  icon={<Library className="size-3.5" />}
-                  label="Library"
+                  icon={<Code className="size-3.5" />}
+                  label="Code"
                 />
+                <SidebarItem
+                  active={selectedCategory === 'type' && selectedType === 2}
+                  onClick={() => {
+                    setSelectedCategory('type')
+                    setSelectedType(2)
+                    setSelectedFolderId(null)
+                    setSelectedTag(null)
+                  }}
+                  icon={<FileText className="size-3.5" />}
+                  label="Notes"
+                />
+                <SidebarItem
+                  active={selectedCategory === 'type' && selectedType === 3}
+                  onClick={() => {
+                    setSelectedCategory('type')
+                    setSelectedType(3)
+                    setSelectedFolderId(null)
+                    setSelectedTag(null)
+                  }}
+                  icon={<Globe className="size-3.5" />}
+                  label="HTTP"
+                />
+                <SidebarItem
+                  active={selectedCategory === 'type' && selectedType === 4}
+                  onClick={() => {
+                    setSelectedCategory('type')
+                    setSelectedType(4)
+                    setSelectedFolderId(null)
+                    setSelectedTag(null)
+                  }}
+                  icon={<Sigma className="size-3.5" />}
+                  label="Math"
+                />
+                <SidebarItem
+                  active={selectedCategory === 'type' && selectedType === 5}
+                  onClick={() => {
+                    setSelectedCategory('type')
+                    setSelectedType(5)
+                    setSelectedFolderId(null)
+                    setSelectedTag(null)
+                  }}
+                  icon={<Wrench className="size-3.5" />}
+                  label="Tools"
+                />
+              </div>
+              <div className="space-y-1">
                 <SidebarItem
                   active={selectedCategory === 'inbox'}
                   onClick={() => {
@@ -329,46 +371,42 @@ export function FloatingMassCodePanel({
                   label="Trash"
                 />
               </div>
-
-              {/* Folders */}
               {data?.folders.length ? (
                 <div className="space-y-1">
-                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase">
                     Folders
                   </span>
-                  {data.folders.map((folder) => (
+                  {data.folders.map((f) => (
                     <SidebarItem
-                      key={folder.id}
-                      active={selectedCategory === 'folders' && selectedFolderId === folder.id}
+                      key={f.id}
+                      active={selectedCategory === 'folders' && selectedFolderId === f.id}
                       onClick={() => {
                         setSelectedCategory('folders')
-                        setSelectedFolderId(folder.id)
+                        setSelectedFolderId(f.id)
                         setSelectedTag(null)
                       }}
                       icon={<Folder className="size-3.5" />}
-                      label={folder.name}
+                      label={f.name}
                     />
                   ))}
                 </div>
               ) : null}
-
-              {/* Tags */}
               {data?.tags.length ? (
                 <div className="space-y-1">
-                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase">
                     Tags
                   </span>
-                  {data.tags.map((tag) => (
+                  {data.tags.map((t) => (
                     <SidebarItem
-                      key={tag}
-                      active={selectedCategory === 'tags' && selectedTag === tag}
+                      key={t}
+                      active={selectedCategory === 'tags' && selectedTag === t}
                       onClick={() => {
                         setSelectedCategory('tags')
-                        setSelectedTag(tag)
+                        setSelectedTag(t)
                         setSelectedFolderId(null)
                       }}
                       icon={<Tag className="size-3.5" />}
-                      label={tag}
+                      label={t}
                     />
                   ))}
                 </div>
@@ -376,25 +414,39 @@ export function FloatingMassCodePanel({
             </div>
           </ScrollArea>
         </div>
-
-        {/* Content */}
         <div className="flex-1 flex flex-col min-w-0">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-1">
-              {filteredSnippets.map((snippet) => (
+              {filteredSnippets.map((s) => (
                 <div
-                  key={snippet.id}
-                  onClick={() => handleCopy(snippet)}
+                  key={s.id}
+                  onClick={() => handleCopy(s)}
                   className="group flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
                 >
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-sm font-medium truncate">{snippet.name}</span>
-                    {previewLines > 0 && (
-                      <span
-                        className={`text-[10px] text-muted-foreground font-mono leading-tight mt-0.5 line-clamp-${previewLines}`}
-                      >
-                        {snippet.content}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{s.name}</span>
+                      <span className="text-[9px] text-muted-foreground uppercase font-mono px-1 bg-secondary/50 rounded leading-tight shrink-0">
+                        {s.language}
                       </span>
+                    </div>
+                    {previewLines > 0 && (
+                      <div
+                        className="text-[10px] text-muted-foreground font-mono leading-tight mt-1 overflow-hidden"
+                        style={
+                          {
+                            display: '-webkit-box',
+                            WebkitLineClamp: previewLines,
+                            WebkitBoxOrient: 'vertical',
+                            maxHeight: `${previewLines * 1.2}em`
+                          } as React.CSSProperties
+                        }
+                      >
+                        {s.content
+                          .split('\n')
+                          .slice(0, previewLines + 1)
+                          .join('\n')}
+                      </div>
                     )}
                   </div>
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -404,7 +456,7 @@ export function FloatingMassCodePanel({
                       className="size-7"
                       onClick={(e) => {
                         e.stopPropagation()
-                        setViewingSnippet(snippet)
+                        setViewingSnippet(s)
                       }}
                     >
                       <ChevronRight className="size-3.5 text-muted-foreground" />
@@ -419,7 +471,6 @@ export function FloatingMassCodePanel({
               )}
             </div>
           </ScrollArea>
-
           <div className="p-2 border-t border-border bg-secondary/20 flex justify-between items-center">
             <span className="text-[10px] text-muted-foreground px-2">
               {filteredSnippets.length} snippets
@@ -429,7 +480,13 @@ export function FloatingMassCodePanel({
               size="xs"
               className="h-7 gap-1.5 text-xs px-2"
               onClick={() =>
-                setEditingSnippet({ name: '', content: '', language: 'markdown', tags: [] })
+                setEditingSnippet({
+                  name: '',
+                  content: '',
+                  language: 'markdown',
+                  tags: [],
+                  type: selectedType
+                })
               }
             >
               <Plus className="size-3" />
