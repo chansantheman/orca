@@ -46,11 +46,9 @@ export function FloatingMassCodePanel({
   const previewLines = useAppStore((s) => s.settings?.experimentalMassCodePreviewLines ?? 1)
   const [data, setData] = useState<MassCodeData | null>(null)
   const [search, setSearch] = useState('')
-
   const [selectedType, setSelectedType] = useState<MassCodeType>(1)
   const [selectedNav, setSelectedNav] = useState<NavCategory>('all')
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
-
   const [editingSnippet, setEditingSnippet] = useState<Partial<MassCodeExtendedSnippet> | null>(
     null
   )
@@ -77,14 +75,9 @@ export function FloatingMassCodePanel({
       const mSearch =
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.content.toLowerCase().includes(search.toLowerCase())
-      if (!mSearch) {
+      if (!mSearch || s.type !== selectedType) {
         return false
       }
-
-      if (s.type !== selectedType) {
-        return false
-      }
-
       if (selectedNav === 'inbox') {
         return s.inInbox && !s.isTrash
       }
@@ -97,7 +90,6 @@ export function FloatingMassCodePanel({
       if (selectedNav === 'folder' && selectedFolderId) {
         return s.folderId === selectedFolderId && !s.isTrash
       }
-
       return !s.isTrash
     })
   }, [data, search, selectedType, selectedNav, selectedFolderId])
@@ -107,11 +99,7 @@ export function FloatingMassCodePanel({
       return []
     }
     const typePaths: Record<number, string> = { 1: '/code/', 2: '/notes/', 3: '/http/' }
-    const pathPart = typePaths[selectedType]
-    if (!pathPart) {
-      return []
-    }
-    return data.folders.filter((f) => f.id.toLowerCase().includes(pathPart))
+    return data.folders.filter((f) => f.id.toLowerCase().includes(typePaths[selectedType]))
   }, [data, selectedType])
 
   if (!open) {
@@ -171,7 +159,6 @@ export function FloatingMassCodePanel({
 
   if (viewingSnippet) {
     const highlightContent = `\`\`\`${viewingSnippet.language || ''}\n${viewingSnippet.content}\n\`\`\``
-
     return (
       <div
         className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200"
@@ -297,7 +284,6 @@ export function FloatingMassCodePanel({
           <X className="size-3.5" />
         </Button>
       </div>
-
       <div className="flex flex-1 min-h-0">
         <div className="w-12 border-r border-border bg-secondary/20 flex flex-col items-center py-4 gap-4 shrink-0">
           <TypeIcon
@@ -328,7 +314,6 @@ export function FloatingMassCodePanel({
             label="HTTP"
           />
         </div>
-
         <div className="w-44 border-r border-border bg-secondary/5 flex flex-col shrink-0">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-4">
@@ -395,7 +380,6 @@ export function FloatingMassCodePanel({
             </div>
           </ScrollArea>
         </div>
-
         <div className="flex-1 flex flex-col min-w-0 bg-background">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-1">

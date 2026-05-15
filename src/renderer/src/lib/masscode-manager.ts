@@ -4,7 +4,8 @@ import type { MassCodeSnippet, MassCodeFolder } from '../../../shared/types'
  * massCode v5+ Markdown Vault structure:
  * - Root folders define types: code, notes, http.
  * - Each type folder contains user folders or .masscode/inbox.
- * - Each snippet is a .md file with YAML frontmatter.
+ * - Snippets are .md files with YAML frontmatter.
+ * - Type-specific state lives in [Type]/.masscode/state.json
  */
 
 export type MassCodeType = 1 | 2 | 3 | 4 | 5
@@ -35,16 +36,6 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
   const snippets: MassCodeExtendedSnippet[] = []
   const tagsSet = new Set<string>()
 
-  // Try to read .state.json for favorites/other state
-  let stateFavorites: (string | number)[] = []
-  try {
-    const stateContent = await window.api.fs.readFile({ filePath: `${vaultPath}/.state.json` })
-    const state = JSON.parse(stateContent.content)
-    stateFavorites = state.favorites || []
-  } catch {
-    // ignore
-  }
-
   // Helper to recursively walk the vault
   async function walk(
     currentPath: string,
@@ -58,31 +49,27 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
       const relativePath = fullPath.replace(`${vaultPath}/`, '')
       const pathSegments = relativePath.split('/')
 
-      // Determine type from root folder if not already set
+      // Determine type from root folder
       let detectedType = currentType
       if (!detectedType && pathSegments.length > 0) {
-        detectedType = TYPE_MAP[pathSegments[0].toLowerCase()] || 1
+        detectedType = TYPE_MAP[pathSegments[0].toLowerCase()]
       }
 
       if (entry.isDirectory) {
-        // Skip .git or other system folders, but allow .masscode/inbox
+        // Skip hidden folders except .masscode (where inbox snippets live)
         if (entry.name.startsWith('.') && entry.name !== '.masscode') {
           continue
         }
 
-        // Don't add 'code', 'notes', etc. as user folders
         const isRootTypeFolder = currentPath === vaultPath && TYPE_MAP[entry.name.toLowerCase()]
+        const folderNameLower = entry.name.toLowerCase()
+        const isSystemDir =
+          folderNameLower === '.masscode' ||
+          folderNameLower === 'inbox' ||
+          folderNameLower === 'trash'
 
         const folderId = fullPath
-        // Consolidate: skip 'inbox' and root 'trash' from being physical user folders
-        const isTrashDir = entry.name.toLowerCase() === 'trash'
-
-        if (
-          !isRootTypeFolder &&
-          entry.name !== '.masscode' &&
-          entry.name !== 'inbox' &&
-          !isTrashDir
-        ) {
+        if (!isRootTypeFolder && !isSystemDir) {
           folders.push({
             id: folderId,
             name: entry.name,
@@ -90,7 +77,7 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
           })
         }
 
-        await walk(fullPath, folderId, detectedType)
+        await walk(fullPath, isSystemDir ? parentId : folderId, detectedType)
       } else if (entry.name.endsWith('.md')) {
         try {
           const { content } = await window.api.fs.readFile({ filePath: fullPath })
@@ -101,20 +88,16 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
 
             // metadata might have isFavorites, isFavorite, or favorited
             const metadata = snippet as unknown as Record<string, unknown>
-            const isFavoriteInFile =
+            const isFavorite =
               metadata.isFavorites === 1 ||
               metadata.isFavorites === true ||
               metadata.isFavorite === 1 ||
               metadata.isFavorite === true
 
-            // massCode v5 state uses snippet.id (which is often a number)
-            const idMatch = stateFavorites.some((fav) => String(fav) === String(metadata.id))
-            const pathMatch = stateFavorites.some((fav) => String(fav) === snippet.id)
-
             const extendedSnippet: MassCodeExtendedSnippet = {
               ...snippet,
               type: detectedType || 1,
-              isFavorite: isFavoriteInFile || idMatch || pathMatch,
+              isFavorite,
               isTrash,
               inInbox
             }
