@@ -13,13 +13,17 @@ import {
   ChevronRight,
   Inbox,
   Star,
+  Trash2,
+  Tag,
   Copy,
   Check,
   Code,
   FileText,
   Globe,
+  Sigma,
+  Wrench,
   Edit2,
-  Trash2
+  List
 } from 'lucide-react'
 import {
   fetchMassCodeData,
@@ -30,7 +34,7 @@ import {
 } from '@/lib/masscode-manager'
 import { toast } from 'sonner'
 
-type SidebarCategory = 'inbox' | 'favorites' | 'trash' | 'folders' | 'type'
+type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder' | 'tag'
 
 export function FloatingMassCodePanel({
   open,
@@ -43,9 +47,12 @@ export function FloatingMassCodePanel({
   const previewLines = useAppStore((s) => s.settings?.experimentalMassCodePreviewLines ?? 1)
   const [data, setData] = useState<MassCodeData | null>(null)
   const [search, setSearch] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<SidebarCategory>('type')
+
   const [selectedType, setSelectedType] = useState<MassCodeType>(1)
+  const [selectedNav, setSelectedNav] = useState<NavCategory>('all')
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [selectedTag, setSelectedTag] = useState<string | null>(null)
+
   const [editingSnippet, setEditingSnippet] = useState<Partial<MassCodeExtendedSnippet> | null>(
     null
   )
@@ -75,41 +82,49 @@ export function FloatingMassCodePanel({
       if (!mSearch) {
         return false
       }
-      if (selectedCategory === 'inbox') {
+
+      if (s.type !== selectedType) {
+        return false
+      }
+
+      if (selectedNav === 'inbox') {
         return s.inInbox && !s.isTrash
       }
-      if (selectedCategory === 'favorites') {
+      if (selectedNav === 'favorites') {
         return s.isFavorite && !s.isTrash
       }
-      if (selectedCategory === 'trash') {
+      if (selectedNav === 'trash') {
         return s.isTrash
       }
-      if (selectedCategory === 'folders' && selectedFolderId) {
+      if (selectedNav === 'folder' && selectedFolderId) {
         return s.folderId === selectedFolderId && !s.isTrash
       }
-      if (selectedCategory === 'type') {
-        return s.type === selectedType && !s.isTrash
+      if (selectedNav === 'tag' && selectedTag) {
+        return s.tags.includes(selectedTag) && !s.isTrash
       }
+
       return !s.isTrash
     })
-  }, [data, search, selectedCategory, selectedFolderId, selectedType])
+  }, [data, search, selectedType, selectedNav, selectedFolderId, selectedTag])
 
   const visibleFolders = useMemo(() => {
     if (!data) {
       return []
     }
-    if (selectedCategory === 'type') {
-      const typePaths: Record<number, string> = {
-        1: '/code/',
-        2: '/notes/',
-        3: '/http/',
-        4: '/math/',
-        5: '/tools/'
-      }
-      return data.folders.filter((f) => f.id.toLowerCase().includes(typePaths[selectedType]))
+    const typePaths: Record<number, string> = {
+      1: '/code/',
+      2: '/notes/',
+      3: '/http/',
+      4: '/math/',
+      5: '/tools/'
     }
-    return data.folders
-  }, [data, selectedCategory, selectedType])
+    const pathPart = typePaths[selectedType]
+    return data.folders.filter((f) => f.id.toLowerCase().includes(pathPart))
+  }, [data, selectedType])
+
+  if (!open) {
+    return null
+  }
 
   const handleCopy = (s: MassCodeExtendedSnippet) => {
     void navigator.clipboard.writeText(s.content)
@@ -142,7 +157,7 @@ export function FloatingMassCodePanel({
     actionIcon?: React.ReactNode,
     onAction?: () => void
   ) => (
-    <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
+    <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon-xs" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
@@ -162,14 +177,10 @@ export function FloatingMassCodePanel({
     </div>
   )
 
-  if (!open) {
-    return null
-  }
-
   if (viewingSnippet) {
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
+        className="fixed bottom-20 right-3 z-50 flex flex-col w-[700px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200"
         data-floating-masscode-panel
       >
         {renderHeader(
@@ -275,10 +286,10 @@ export function FloatingMassCodePanel({
 
   return (
     <div
-      className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300"
+      className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300"
       data-floating-masscode-panel
     >
-      <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30">
+      <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0">
         <div className="flex items-center gap-2 px-2 flex-1">
           <Search className="size-3.5 text-muted-foreground" />
           <Input
@@ -292,65 +303,94 @@ export function FloatingMassCodePanel({
           <X className="size-3.5" />
         </Button>
       </div>
+
       <div className="flex flex-1 min-h-0">
-        <div className="w-40 border-r border-border bg-secondary/10 flex flex-col shrink-0">
+        <div className="w-12 border-r border-border bg-secondary/20 flex flex-col items-center py-4 gap-4 shrink-0">
+          <TypeIcon
+            active={selectedType === 1}
+            onClick={() => {
+              setSelectedType(1)
+              setSelectedNav('all')
+            }}
+            icon={<Code className="size-5" />}
+            label="Code"
+          />
+          <TypeIcon
+            active={selectedType === 2}
+            onClick={() => {
+              setSelectedType(2)
+              setSelectedNav('all')
+            }}
+            icon={<FileText className="size-5" />}
+            label="Notes"
+          />
+          <TypeIcon
+            active={selectedType === 3}
+            onClick={() => {
+              setSelectedType(3)
+              setSelectedNav('all')
+            }}
+            icon={<Globe className="size-5" />}
+            label="HTTP"
+          />
+          <TypeIcon
+            active={selectedType === 4}
+            onClick={() => {
+              setSelectedType(4)
+              setSelectedNav('all')
+            }}
+            icon={<Sigma className="size-5" />}
+            label="Math"
+          />
+          <TypeIcon
+            active={selectedType === 5}
+            onClick={() => {
+              setSelectedType(5)
+              setSelectedNav('all')
+            }}
+            icon={<Wrench className="size-5" />}
+            label="Tools"
+          />
+        </div>
+
+        <div className="w-44 border-r border-border bg-secondary/5 flex flex-col shrink-0">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-4">
               <div className="space-y-1">
-                <SidebarItem
-                  active={selectedCategory === 'type' && selectedType === 1}
+                <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Library
+                </span>
+                <NavItem
+                  active={selectedNav === 'inbox'}
                   onClick={() => {
-                    setSelectedCategory('type')
-                    setSelectedType(1)
-                    setSelectedFolderId(null)
-                  }}
-                  icon={<Code className="size-3.5" />}
-                  label="Code"
-                />
-                <SidebarItem
-                  active={selectedCategory === 'type' && selectedType === 2}
-                  onClick={() => {
-                    setSelectedCategory('type')
-                    setSelectedType(2)
-                    setSelectedFolderId(null)
-                  }}
-                  icon={<FileText className="size-3.5" />}
-                  label="Notes"
-                />
-                <SidebarItem
-                  active={selectedCategory === 'type' && selectedType === 3}
-                  onClick={() => {
-                    setSelectedCategory('type')
-                    setSelectedType(3)
-                    setSelectedFolderId(null)
-                  }}
-                  icon={<Globe className="size-3.5" />}
-                  label="HTTP"
-                />
-              </div>
-              <div className="space-y-1 pt-1 border-t border-border/40">
-                <SidebarItem
-                  active={selectedCategory === 'inbox'}
-                  onClick={() => {
-                    setSelectedCategory('inbox')
+                    setSelectedNav('inbox')
                     setSelectedFolderId(null)
                   }}
                   icon={<Inbox className="size-3.5" />}
                   label="Inbox"
                 />
-                <SidebarItem
-                  active={selectedCategory === 'favorites'}
+                <NavItem
+                  active={selectedNav === 'favorites'}
                   onClick={() => {
-                    setSelectedCategory('favorites')
+                    setSelectedNav('favorites')
                     setSelectedFolderId(null)
                   }}
                   icon={<Star className="size-3.5" />}
                   label="Favorites"
                 />
-                <SidebarItem
-                  active={selectedCategory === 'trash'}
+                <NavItem
+                  active={selectedNav === 'all'}
                   onClick={() => {
-                    setSelectedCategory('trash')
+                    setSelectedNav('all')
+                    setSelectedFolderId(null)
+                  }}
+                  icon={<List className="size-3.5" />}
+                  label="All Snippets"
+                />
+                <NavItem
+                  active={selectedNav === 'trash'}
+                  onClick={() => {
+                    setSelectedNav('trash')
                     setSelectedFolderId(null)
                   }}
                   icon={<Trash2 className="size-3.5" />}
@@ -359,15 +399,15 @@ export function FloatingMassCodePanel({
               </div>
               {visibleFolders.length ? (
                 <div className="space-y-1">
-                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase">
+                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                     Folders
                   </span>
                   {visibleFolders.map((f) => (
-                    <SidebarItem
+                    <NavItem
                       key={f.id}
-                      active={selectedCategory === 'folders' && selectedFolderId === f.id}
+                      active={selectedNav === 'folder' && selectedFolderId === f.id}
                       onClick={() => {
-                        setSelectedCategory('folders')
+                        setSelectedNav('folder')
                         setSelectedFolderId(f.id)
                       }}
                       icon={<Folder className="size-3.5" />}
@@ -376,10 +416,30 @@ export function FloatingMassCodePanel({
                   ))}
                 </div>
               ) : null}
+              {data?.tags.length ? (
+                <div className="space-y-1">
+                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Tags
+                  </span>
+                  {data.tags.map((t) => (
+                    <NavItem
+                      key={t}
+                      active={selectedNav === 'tag' && selectedTag === t}
+                      onClick={() => {
+                        setSelectedNav('tag')
+                        setSelectedTag(t)
+                      }}
+                      icon={<Tag className="size-3.5" />}
+                      label={t}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           </ScrollArea>
         </div>
-        <div className="flex-1 flex flex-col min-w-0">
+
+        <div className="flex-1 flex flex-col min-w-0 bg-background">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-1">
               {filteredSnippets.map((s) => (
@@ -427,7 +487,7 @@ export function FloatingMassCodePanel({
               )}
             </div>
           </ScrollArea>
-          <div className="p-2 border-t border-border bg-secondary/20 flex justify-between items-center shrink-0">
+          <div className="p-2 border-t border-border bg-secondary/10 flex justify-between items-center shrink-0">
             <span className="text-[10px] text-muted-foreground px-2">
               {filteredSnippets.length} snippets
             </span>
@@ -455,7 +515,29 @@ export function FloatingMassCodePanel({
   )
 }
 
-function SidebarItem({
+function TypeIcon({
+  active,
+  onClick,
+  icon,
+  label
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`p-2 rounded-md transition-all ${active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/50'}`}
+    >
+      {icon}
+    </button>
+  )
+}
+
+function NavItem({
   active,
   onClick,
   icon,
