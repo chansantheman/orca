@@ -31,10 +31,43 @@ const TYPE_MAP: Record<string, MassCodeType> = {
   tools: 5
 }
 
+function normalizePathForMatch(pathValue: string): string {
+  return pathValue.replaceAll('\\', '/').toLowerCase()
+}
+
+function parseTruthyFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (typeof value === 'number') {
+    return value === 1
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === '1' || normalized === 'true' || normalized === 'yes'
+  }
+  return false
+}
+
+function getMetadataValueCaseInsensitive(
+  metadata: Record<string, unknown>,
+  keys: string[]
+): unknown {
+  const lookup = new Map(Object.entries(metadata).map(([key, value]) => [key.toLowerCase(), value]))
+  for (const key of keys) {
+    const value = lookup.get(key.toLowerCase())
+    if (value !== undefined) {
+      return value
+    }
+  }
+  return undefined
+}
+
 export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData> {
   const folders: MassCodeFolder[] = []
   const snippets: MassCodeExtendedSnippet[] = []
   const tagsSet = new Set<string>()
+  const normalizedVaultPath = normalizePathForMatch(vaultPath)
 
   // Helper to recursively walk the vault
   async function walk(
@@ -46,7 +79,8 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
 
     for (const entry of entries) {
       const fullPath = `${currentPath}/${entry.name}`
-      const relativePath = fullPath.replace(`${vaultPath}/`, '')
+      const normalizedFullPath = normalizePathForMatch(fullPath)
+      const relativePath = normalizedFullPath.replace(`${normalizedVaultPath}/`, '')
       const pathSegments = relativePath.split('/')
 
       // Determine type from root folder
@@ -83,16 +117,18 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
           const { content } = await window.api.fs.readFile({ filePath: fullPath })
           const snippet = parseSnippet(content, fullPath, parentId)
           if (snippet) {
-            const isTrash = fullPath.toLowerCase().includes('/trash/')
-            const inInbox = fullPath.toLowerCase().includes('/inbox/')
+            const isTrash = normalizedFullPath.includes('/trash/')
+            const inInbox = normalizedFullPath.includes('/inbox/')
 
-            // metadata might have isFavorites, isFavorite, or favorited
+            // Why: massCode vaults in the wild mix naming/casing and string booleans.
             const metadata = snippet as unknown as Record<string, unknown>
-            const isFavorite =
-              metadata.isFavorites === 1 ||
-              metadata.isFavorites === true ||
-              metadata.isFavorite === 1 ||
-              metadata.isFavorite === true
+            const favoriteValue = getMetadataValueCaseInsensitive(metadata, [
+              'isFavorites',
+              'isFavorite',
+              'favorited',
+              'favorite'
+            ])
+            const isFavorite = parseTruthyFlag(favoriteValue)
 
             const extendedSnippet: MassCodeExtendedSnippet = {
               ...snippet,
@@ -157,6 +193,10 @@ function parseSnippet(
     }
   })
 
+  // Why: folder assignment comes from the vault filesystem path; frontmatter
+  // can be stale and must not re-parent snippets in the UI.
+  const { folderId: _frontmatterFolderId, ...metadataWithoutFolderId } = metadata
+
   return {
     id: filePath,
     name: (metadata.name as string) || filePath.split('/').pop()?.replace('.md', '') || 'Untitled',
@@ -167,7 +207,7 @@ function parseSnippet(
     createdAt: Number(metadata.createdAt) || Date.now(),
     updatedAt: Number(metadata.updatedAt) || Date.now(),
     // @ts-ignore - carry extra metadata for internal processing
-    ...metadata
+    ...metadataWithoutFolderId
   }
 }
 

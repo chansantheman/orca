@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Markdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import { useAppStore } from '@/store'
@@ -22,7 +22,8 @@ import {
   FileText,
   Globe,
   Edit2,
-  List
+  List,
+  GripHorizontal
 } from 'lucide-react'
 import {
   fetchMassCodeData,
@@ -32,8 +33,10 @@ import {
   type MassCodeType
 } from '@/lib/masscode-manager'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder'
+const NO_DRAG_SELECTOR = 'button,input,textarea,select,a,[role="menuitem"]'
 
 export function FloatingMassCodePanel({
   open,
@@ -44,6 +47,7 @@ export function FloatingMassCodePanel({
 }): React.JSX.Element | null {
   const vaultPath = useAppStore((s) => s.settings?.experimentalMassCodeVaultPath)
   const previewLines = useAppStore((s) => s.settings?.experimentalMassCodePreviewLines ?? 1)
+  const theme = useAppStore((s) => s.settings?.theme ?? 'system')
   const [data, setData] = useState<MassCodeData | null>(null)
   const [search, setSearch] = useState('')
   const [selectedType, setSelectedType] = useState<MassCodeType>(1)
@@ -54,6 +58,15 @@ export function FloatingMassCodePanel({
   )
   const [viewingSnippet, setViewingSnippet] = useState<MassCodeExtendedSnippet | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const boundsRef = useRef({ left: 400, top: 100 })
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    initialLeft: number
+    initialTop: number
+  } | null>(null)
 
   const refreshData = useCallback(() => {
     if (vaultPath) {
@@ -64,6 +77,13 @@ export function FloatingMassCodePanel({
   useEffect(() => {
     if (open) {
       refreshData()
+      if (typeof window !== 'undefined' && panelRef.current) {
+        const left = Math.max(16, window.innerWidth - 750 - 24)
+        const top = Math.max(36, window.innerHeight - 500 - 84)
+        boundsRef.current = { left, top }
+        panelRef.current.style.left = `${left}px`
+        panelRef.current.style.top = `${top}px`
+      }
     }
   }, [open, refreshData])
 
@@ -99,12 +119,12 @@ export function FloatingMassCodePanel({
       return []
     }
     const typePaths: Record<number, string> = { 1: '/code/', 2: '/notes/', 3: '/http/' }
-    return data.folders.filter((f) => f.id.toLowerCase().includes(typePaths[selectedType]))
+    const pathPart = typePaths[selectedType]
+    if (!pathPart) {
+      return []
+    }
+    return data.folders.filter((f) => f.id.toLowerCase().includes(pathPart))
   }, [data, selectedType])
-
-  if (!open) {
-    return null
-  }
 
   const handleCopy = (s: MassCodeExtendedSnippet) => {
     void navigator.clipboard.writeText(s.content)
@@ -131,13 +151,57 @@ export function FloatingMassCodePanel({
     }
   }
 
+  const handleDragStart = (e: React.PointerEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest(NO_DRAG_SELECTOR)) {
+      return
+    }
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialLeft: boundsRef.current.left,
+      initialTop: boundsRef.current.top
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const handleDragMove = (e: React.PointerEvent) => {
+    if (!dragRef.current || dragRef.current.pointerId !== e.pointerId || !panelRef.current) {
+      return
+    }
+    const left = dragRef.current.initialLeft + e.clientX - dragRef.current.startX
+    const top = dragRef.current.initialTop + e.clientY - dragRef.current.startY
+    boundsRef.current = { left, top }
+    panelRef.current.style.left = `${left}px`
+    panelRef.current.style.top = `${top}px`
+  }
+
+  const resolvedThemeClass =
+    theme === 'system'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'markdown-dark'
+        : 'markdown-light'
+      : theme === 'dark'
+        ? 'markdown-dark'
+        : 'markdown-light'
+  if (!open) {
+    return null
+  }
+
   const renderHeader = (
     title: string,
     onBack: () => void,
     actionIcon?: React.ReactNode,
     onAction?: () => void
   ) => (
-    <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0">
+    <div
+      className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
+      onPointerDown={handleDragStart}
+      onPointerMove={handleDragMove}
+      onPointerUp={() => {
+        dragRef.current = null
+      }}
+    >
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon-xs" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
@@ -145,6 +209,7 @@ export function FloatingMassCodePanel({
         <span className="text-xs font-medium truncate max-w-[400px]">{title}</span>
       </div>
       <div className="flex items-center gap-1">
+        <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
         {actionIcon && (
           <Button variant="ghost" size="icon-xs" onClick={onAction}>
             {actionIcon}
@@ -161,8 +226,9 @@ export function FloatingMassCodePanel({
     const highlightContent = `\`\`\`${viewingSnippet.language || ''}\n${viewingSnippet.content}\n\`\`\``
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200"
-        data-floating-masscode-panel
+        ref={panelRef}
+        className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200 w-[750px] h-[500px]"
+        style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
       >
         {renderHeader(
           viewingSnippet.name,
@@ -187,7 +253,7 @@ export function FloatingMassCodePanel({
             </Button>
           </div>
         )}
-        <div className="flex-1 p-0 overflow-hidden flex flex-col">
+        <div className={cn('flex-1 p-0 overflow-hidden flex flex-col', resolvedThemeClass)}>
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-secondary/10 shrink-0">
             <span className="text-[10px] font-mono text-muted-foreground uppercase">
               {viewingSnippet.language}
@@ -201,8 +267,8 @@ export function FloatingMassCodePanel({
               </span>
             ))}
           </div>
-          <ScrollArea className="flex-1">
-            <div className="p-4 prose prose-invert prose-xs max-w-none">
+          <ScrollArea className="flex-1 px-4 py-3">
+            <div className="markdown-body text-[11px] leading-relaxed">
               <Markdown rehypePlugins={[rehypeHighlight]}>{highlightContent}</Markdown>
             </div>
           </ScrollArea>
@@ -214,8 +280,9 @@ export function FloatingMassCodePanel({
   if (editingSnippet) {
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
-        data-floating-masscode-panel
+        ref={panelRef}
+        className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden w-[750px] h-[500px]"
+        style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
       >
         {renderHeader(
           editingSnippet.id ? 'Edit Snippet' : 'New Snippet',
@@ -223,8 +290,8 @@ export function FloatingMassCodePanel({
           <Save className="size-3.5" />,
           () => void handleSave()
         )}
-        <div className="flex-1 p-4 space-y-4 overflow-auto">
-          <div className="space-y-1.5">
+        <div className="flex-1 p-4 space-y-4 overflow-auto flex flex-col">
+          <div className="space-y-1.5 shrink-0">
             <label className="text-[10px] uppercase text-muted-foreground font-semibold">
               Title
             </label>
@@ -234,7 +301,7 @@ export function FloatingMassCodePanel({
               className="h-8 text-sm"
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 shrink-0">
             <label className="text-[10px] uppercase text-muted-foreground font-semibold">
               Language
             </label>
@@ -250,14 +317,14 @@ export function FloatingMassCodePanel({
               <option value="python">Python</option>
             </select>
           </div>
-          <div className="space-y-1.5 flex flex-col flex-1">
+          <div className="space-y-1.5 flex flex-col flex-1 min-h-0">
             <label className="text-[10px] uppercase text-muted-foreground font-semibold">
               Content
             </label>
             <textarea
               value={editingSnippet.content || ''}
               onChange={(e) => setEditingSnippet({ ...editingSnippet, content: e.target.value })}
-              className="flex-1 min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              className="flex-1 w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring resize-none"
             />
           </div>
         </div>
@@ -267,10 +334,19 @@ export function FloatingMassCodePanel({
 
   return (
     <div
-      className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300"
+      ref={panelRef}
+      className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300 w-[750px] h-[500px]"
+      style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
       data-floating-masscode-panel
     >
-      <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0">
+      <div
+        className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={() => {
+          dragRef.current = null
+        }}
+      >
         <div className="flex items-center gap-2 px-2 flex-1">
           <Search className="size-3.5 text-muted-foreground" />
           <Input
@@ -280,9 +356,12 @@ export function FloatingMassCodePanel({
             className="h-7 border-none bg-transparent focus-visible:ring-0 text-sm p-0 shadow-none"
           />
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
-          <X className="size-3.5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
+          <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
+            <X className="size-3.5" />
+          </Button>
+        </div>
       </div>
       <div className="flex flex-1 min-h-0">
         <div className="w-12 border-r border-border bg-secondary/20 flex flex-col items-center py-4 gap-4 shrink-0">
