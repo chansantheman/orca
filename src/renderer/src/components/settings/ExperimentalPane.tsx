@@ -78,6 +78,25 @@ export function ExperimentalPane({
                 <FolderIcon className="size-3.5" />
               </Button>
             </div>
+            <div className="space-y-1.5 pt-1">
+              <Label>Snippet Preview Lines</Label>
+              <div className="flex items-center gap-4">
+                {[0, 1, 2].map((lines) => (
+                  <label key={lines} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="masscode-preview-lines"
+                      checked={settings.experimentalMassCodePreviewLines === lines}
+                      onChange={() => updateSettings({ experimentalMassCodePreviewLines: lines })}
+                      className="size-3.5"
+                    />
+                    <span className="text-xs">
+                      {lines === 0 ? 'None' : `${lines} line${lines > 1 ? 's' : ''}`}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         </SearchableSetting>
       ) : null}

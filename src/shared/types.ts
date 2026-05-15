@@ -1439,6 +1439,8 @@ export type GlobalSettings = {
   /** Experimental: path to the local massCode Vault directory. When set,
    *  enables the floating massCode snippet integration. */
   experimentalMassCodeVaultPath: string | null
+  /** Number of preview lines to show in the massCode snippet list (0, 1, or 2). */
+  experimentalMassCodePreviewLines: number
   /** Active non-local runtime environment for client-routed RPC. `null`
    *  preserves the current local desktop behavior. */
   activeRuntimeEnvironmentId?: string | null

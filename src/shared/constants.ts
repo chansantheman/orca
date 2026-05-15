@@ -256,6 +256,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalActivity: true,
     experimentalWorktreeSymlinks: false,
     experimentalMassCodeVaultPath: null,
+    experimentalMassCodePreviewLines: 1,
     // Why: local desktop remains the default server until the user explicitly
     // selects a saved runtime environment.
     activeRuntimeEnvironmentId: null,

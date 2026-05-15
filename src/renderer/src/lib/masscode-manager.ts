@@ -6,14 +6,31 @@ import type { MassCodeSnippet, MassCodeFolder } from '../../../shared/types'
  * - Each snippet is a .md file with YAML frontmatter.
  */
 
+export type MassCodeExtendedSnippet = MassCodeSnippet & {
+  isFavorite: boolean
+  isTrash: boolean
+}
+
 export type MassCodeData = {
-  snippets: MassCodeSnippet[]
+  snippets: MassCodeExtendedSnippet[]
   folders: MassCodeFolder[]
+  tags: string[]
 }
 
 export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData> {
   const folders: MassCodeFolder[] = []
-  const snippets: MassCodeSnippet[] = []
+  const snippets: MassCodeExtendedSnippet[] = []
+  const tagsSet = new Set<string>()
+
+  // Try to read .state.json for favorites
+  let favorites: string[] = []
+  try {
+    const stateContent = await window.api.fs.readFile({ filePath: `${vaultPath}/.state.json` })
+    const state = JSON.parse(stateContent.content)
+    favorites = state.favorites || []
+  } catch {
+    // .state.json might not exist or be accessible
+  }
 
   // Helper to recursively walk the vault
   async function walk(currentPath: string, parentId: string | null = null): Promise<void> {
@@ -21,8 +38,13 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
 
     for (const entry of entries) {
       const fullPath = `${currentPath}/${entry.name}`
+      // Skip hidden folders
+      if (entry.name.startsWith('.')) {
+        continue
+      }
+
       if (entry.isDirectory) {
-        const folderId = fullPath // Use full path as ID for simplicity
+        const folderId = fullPath
         folders.push({
           id: folderId,
           name: entry.name,
@@ -34,7 +56,14 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
           const { content } = await window.api.fs.readFile({ filePath: fullPath })
           const snippet = parseSnippet(content, fullPath, parentId)
           if (snippet) {
-            snippets.push(snippet)
+            const extendedSnippet: MassCodeExtendedSnippet = {
+              ...snippet,
+              isFavorite:
+                favorites.includes(snippet.id) || favorites.includes(entry.name.replace('.md', '')),
+              isTrash: fullPath.includes('/Trash/') || fullPath.includes('/trash/')
+            }
+            snippets.push(extendedSnippet)
+            snippet.tags.forEach((t) => tagsSet.add(t))
           }
         } catch (err) {
           console.error(`Failed to parse snippet at ${fullPath}:`, err)
@@ -44,7 +73,7 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
   }
 
   await walk(vaultPath)
-  return { snippets, folders }
+  return { snippets, folders, tags: Array.from(tagsSet).sort() }
 }
 
 function parseSnippet(
@@ -56,7 +85,6 @@ function parseSnippet(
   const match = rawContent.match(frontmatterRegex)
 
   if (!match) {
-    // Fallback: title from filename, content is the whole file
     const name = filePath.split('/').pop()?.replace('.md', '') || 'Untitled'
     return {
       id: filePath,
@@ -74,7 +102,6 @@ function parseSnippet(
   const content = match[2]
   const metadata: Record<string, unknown> = {}
 
-  // Extremely simple YAML-ish parser for massCode frontmatter
   yaml.split('\n').forEach((line) => {
     const [key, ...valueParts] = line.split(':')
     if (key && valueParts.length > 0) {
