@@ -2,7 +2,7 @@ import type { MassCodeSnippet, MassCodeFolder } from '../../../shared/types'
 
 /**
  * massCode v5+ Markdown Vault structure:
- * - Root folders define types: code, notes, http, math, tools.
+ * - Root folders define types: code, notes, http.
  * - Each type folder contains user folders or .masscode/inbox.
  * - Each snippet is a .md file with YAML frontmatter.
  */
@@ -36,7 +36,7 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
   const tagsSet = new Set<string>()
 
   // Try to read .state.json for favorites/other state
-  let stateFavorites: string[] = []
+  let stateFavorites: (string | number)[] = []
   try {
     const stateContent = await window.api.fs.readFile({ filePath: `${vaultPath}/.state.json` })
     const state = JSON.parse(stateContent.content)
@@ -74,7 +74,15 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
         const isRootTypeFolder = currentPath === vaultPath && TYPE_MAP[entry.name.toLowerCase()]
 
         const folderId = fullPath
-        if (!isRootTypeFolder && entry.name !== '.masscode' && entry.name !== 'inbox') {
+        // Consolidate: skip 'inbox' and root 'trash' from being physical user folders
+        const isTrashDir = entry.name.toLowerCase() === 'trash'
+
+        if (
+          !isRootTypeFolder &&
+          entry.name !== '.masscode' &&
+          entry.name !== 'inbox' &&
+          !isTrashDir
+        ) {
           folders.push({
             id: folderId,
             name: entry.name,
@@ -91,16 +99,22 @@ export async function fetchMassCodeData(vaultPath: string): Promise<MassCodeData
             const isTrash = fullPath.toLowerCase().includes('/trash/')
             const inInbox = fullPath.toLowerCase().includes('/inbox/')
 
-            // @ts-ignore - use metadata favorites if present
-            const isFavoriteInFile = snippet.isFavorites === 1 || snippet.isFavorite === true
+            // metadata might have isFavorites, isFavorite, or favorited
+            const metadata = snippet as unknown as Record<string, unknown>
+            const isFavoriteInFile =
+              metadata.isFavorites === 1 ||
+              metadata.isFavorites === true ||
+              metadata.isFavorite === 1 ||
+              metadata.isFavorite === true
+
+            // massCode v5 state uses snippet.id (which is often a number)
+            const idMatch = stateFavorites.some((fav) => String(fav) === String(metadata.id))
+            const pathMatch = stateFavorites.some((fav) => String(fav) === snippet.id)
 
             const extendedSnippet: MassCodeExtendedSnippet = {
               ...snippet,
               type: detectedType || 1,
-              isFavorite:
-                isFavoriteInFile ||
-                stateFavorites.includes(snippet.id) ||
-                stateFavorites.includes(entry.name.replace('.md', '')),
+              isFavorite: isFavoriteInFile || idMatch || pathMatch,
               isTrash,
               inInbox
             }
@@ -185,7 +199,6 @@ export async function writeMassCodeSnippet(
   const updatedAt = Date.now()
   const content = snippet.content || ''
 
-  // Preserve original metadata if possible, but update key fields
   const frontmatter = [
     '---',
     `name: ${name}`,

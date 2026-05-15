@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import Markdown from 'react-markdown'
+import rehypeHighlight from 'rehype-highlight'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,14 +16,11 @@ import {
   Inbox,
   Star,
   Trash2,
-  Tag,
   Copy,
   Check,
   Code,
   FileText,
   Globe,
-  Sigma,
-  Wrench,
   Edit2,
   List
 } from 'lucide-react'
@@ -34,7 +33,7 @@ import {
 } from '@/lib/masscode-manager'
 import { toast } from 'sonner'
 
-type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder' | 'tag'
+type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder'
 
 export function FloatingMassCodePanel({
   open,
@@ -51,7 +50,6 @@ export function FloatingMassCodePanel({
   const [selectedType, setSelectedType] = useState<MassCodeType>(1)
   const [selectedNav, setSelectedNav] = useState<NavCategory>('all')
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
-  const [selectedTag, setSelectedTag] = useState<string | null>(null)
 
   const [editingSnippet, setEditingSnippet] = useState<Partial<MassCodeExtendedSnippet> | null>(
     null
@@ -99,26 +97,20 @@ export function FloatingMassCodePanel({
       if (selectedNav === 'folder' && selectedFolderId) {
         return s.folderId === selectedFolderId && !s.isTrash
       }
-      if (selectedNav === 'tag' && selectedTag) {
-        return s.tags.includes(selectedTag) && !s.isTrash
-      }
 
       return !s.isTrash
     })
-  }, [data, search, selectedType, selectedNav, selectedFolderId, selectedTag])
+  }, [data, search, selectedType, selectedNav, selectedFolderId])
 
   const visibleFolders = useMemo(() => {
     if (!data) {
       return []
     }
-    const typePaths: Record<number, string> = {
-      1: '/code/',
-      2: '/notes/',
-      3: '/http/',
-      4: '/math/',
-      5: '/tools/'
-    }
+    const typePaths: Record<number, string> = { 1: '/code/', 2: '/notes/', 3: '/http/' }
     const pathPart = typePaths[selectedType]
+    if (!pathPart) {
+      return []
+    }
     return data.folders.filter((f) => f.id.toLowerCase().includes(pathPart))
   }, [data, selectedType])
 
@@ -178,9 +170,11 @@ export function FloatingMassCodePanel({
   )
 
   if (viewingSnippet) {
+    const highlightContent = `\`\`\`${viewingSnippet.language || ''}\n${viewingSnippet.content}\n\`\`\``
+
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[700px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200"
+        className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200"
         data-floating-masscode-panel
       >
         {renderHeader(
@@ -207,7 +201,7 @@ export function FloatingMassCodePanel({
           </div>
         )}
         <div className="flex-1 p-0 overflow-hidden flex flex-col">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-secondary/10">
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-secondary/10 shrink-0">
             <span className="text-[10px] font-mono text-muted-foreground uppercase">
               {viewingSnippet.language}
             </span>
@@ -220,10 +214,10 @@ export function FloatingMassCodePanel({
               </span>
             ))}
           </div>
-          <ScrollArea className="flex-1 px-4 py-3">
-            <pre className="text-xs font-mono whitespace-pre select-text leading-relaxed">
-              {viewingSnippet.content}
-            </pre>
+          <ScrollArea className="flex-1">
+            <div className="p-4 prose prose-invert prose-xs max-w-none">
+              <Markdown rehypePlugins={[rehypeHighlight]}>{highlightContent}</Markdown>
+            </div>
           </ScrollArea>
         </div>
       </div>
@@ -233,7 +227,7 @@ export function FloatingMassCodePanel({
   if (editingSnippet) {
     return (
       <div
-        className="fixed bottom-20 right-3 z-50 flex flex-col w-[600px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
+        className="fixed bottom-20 right-3 z-50 flex flex-col w-[750px] h-[500px] bg-background border border-border shadow-2xl rounded-lg overflow-hidden"
         data-floating-masscode-panel
       >
         {renderHeader(
@@ -333,24 +327,6 @@ export function FloatingMassCodePanel({
             icon={<Globe className="size-5" />}
             label="HTTP"
           />
-          <TypeIcon
-            active={selectedType === 4}
-            onClick={() => {
-              setSelectedType(4)
-              setSelectedNav('all')
-            }}
-            icon={<Sigma className="size-5" />}
-            label="Math"
-          />
-          <TypeIcon
-            active={selectedType === 5}
-            onClick={() => {
-              setSelectedType(5)
-              setSelectedNav('all')
-            }}
-            icon={<Wrench className="size-5" />}
-            label="Tools"
-          />
         </div>
 
         <div className="w-44 border-r border-border bg-secondary/5 flex flex-col shrink-0">
@@ -416,25 +392,6 @@ export function FloatingMassCodePanel({
                   ))}
                 </div>
               ) : null}
-              {data?.tags.length ? (
-                <div className="space-y-1">
-                  <span className="px-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                    Tags
-                  </span>
-                  {data.tags.map((t) => (
-                    <NavItem
-                      key={t}
-                      active={selectedNav === 'tag' && selectedTag === t}
-                      onClick={() => {
-                        setSelectedNav('tag')
-                        setSelectedTag(t)
-                      }}
-                      icon={<Tag className="size-3.5" />}
-                      label={t}
-                    />
-                  ))}
-                </div>
-              ) : null}
             </div>
           </ScrollArea>
         </div>
@@ -487,7 +444,7 @@ export function FloatingMassCodePanel({
               )}
             </div>
           </ScrollArea>
-          <div className="p-2 border-t border-border bg-secondary/10 flex justify-between items-center shrink-0">
+          <div className="p-2 border-t border-border bg-secondary/20 flex justify-between items-center shrink-0">
             <span className="text-[10px] text-muted-foreground px-2">
               {filteredSnippets.length} snippets
             </span>
