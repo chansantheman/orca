@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -68,6 +68,40 @@ function resolveDevFeatureWallAssetDir(): string {
   // Why: E2E launches out/main/index.js, so app.getAppPath() can point at
   // out/main even though development resources still live at the repo root.
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]
+}
+
+function detectMassCodeVaultPath(): string | null {
+  const home = app.getPath('home')
+
+  // 1. Check for massCode v3+ config file
+  const configLocations = [
+    path.join(app.getPath('userData').replace('Nautilus', 'massCode'), 'config.json'), // AppData
+    path.join(home, 'Library', 'Application Support', 'massCode', 'config.json'), // macOS
+    path.join(home, '.config', 'massCode', 'config.json') // Linux
+  ]
+
+  for (const configPath of configLocations) {
+    if (existsSync(configPath)) {
+      try {
+        const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+          vault?: { path?: string }
+        }
+        if (config.vault?.path) {
+          return config.vault.path
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }
+
+  // 2. Check for default vault location
+  const defaultVault = path.join(home, 'massCode')
+  if (existsSync(defaultVault)) {
+    return defaultVault
+  }
+
+  return null
 }
 
 export function registerAppHandlers(): void {
@@ -140,4 +174,6 @@ export function registerAppHandlers(): void {
   ipcMain.handle('app:getFloatingTerminalCwd', (_event, args?: FloatingTerminalCwdRequest) =>
     resolveFloatingTerminalCwd(args)
   )
+
+  ipcMain.handle('app:detectMassCodeVault', () => detectMassCodeVaultPath())
 }

@@ -57,6 +57,7 @@ import {
 import { FloatingMassCodePanel } from './components/floating-masscode/FloatingMassCodePanel'
 import { FloatingMassCodeToggleButton } from './components/floating-masscode/FloatingMassCodeToggleButton'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
+import { TOGGLE_MASSCODE_PANEL_EVENT } from '@/lib/floating-masscode'
 import { DictationController } from './components/dictation/DictationController'
 import { useGitStatusPolling } from './components/right-sidebar/useGitStatusPolling'
 import { useEditorExternalWatch } from './hooks/useEditorExternalWatch'
@@ -311,6 +312,14 @@ function App(): React.JSX.Element {
     window.addEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
     return () => window.removeEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
   }, [floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
+
+  useEffect(() => {
+    const toggleMassCode = (): void => {
+      setFloatingMassCodeOpen((open) => !open)
+    }
+    window.addEventListener(TOGGLE_MASSCODE_PANEL_EVENT, toggleMassCode)
+    return () => window.removeEventListener(TOGGLE_MASSCODE_PANEL_EVENT, toggleMassCode)
+  }, [])
 
   useEffect(() => {
     if (!floatingTerminalEnabled) {
@@ -1412,19 +1421,24 @@ function App(): React.JSX.Element {
             ) : null}
           </>
         ) : null}
-        {settings?.experimentalMassCodeVaultPath ? (
+        {settings?.experimentalMassCode && settings?.experimentalMassCodeVaultPath ? (
           <>
             <FloatingMassCodePanel
               open={floatingMassCodeOpen}
               onOpenChange={setFloatingMassCodeOpen}
             />
-            <FloatingMassCodeToggleButton
-              open={floatingMassCodeOpen}
-              onToggle={() => setFloatingMassCodeOpen((open) => !open)}
-            />
+            {settings?.massCodeTriggerLocation === 'floating-button' ? (
+              <FloatingMassCodeToggleButton
+                open={floatingMassCodeOpen}
+                onToggle={() => setFloatingMassCodeOpen((open) => !open)}
+              />
+            ) : null}
           </>
         ) : null}
-        <StatusBar floatingTerminalOpen={floatingTerminalOpen} />
+        <StatusBar
+          floatingTerminalOpen={floatingTerminalOpen}
+          floatingMassCodeOpen={floatingMassCodeOpen}
+        />
         {/* Why: NewWorkspaceComposerCard renders Radix <Tooltip>s that crash
             when mounted outside a TooltipProvider ancestor. Keep the global
             composer modal inside this provider so the card renders safely

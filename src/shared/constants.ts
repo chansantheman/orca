@@ -216,6 +216,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     floatingTerminalDefaultedForAllUsers: true,
     floatingTerminalCwd: '~',
     floatingTerminalTriggerLocation: 'floating-button',
+    massCodeTriggerLocation: 'floating-button',
     notifications: getDefaultNotificationSettings(),
     diffDefaultView: 'inline',
     promptCacheTimerEnabled: false,
@@ -255,6 +256,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalPet: false,
     experimentalActivity: true,
     experimentalWorktreeSymlinks: false,
+    experimentalMassCode: false,
     experimentalMassCodeVaultPath: null,
     experimentalMassCodePreviewLines: 1,
     // Why: local desktop remains the default server until the user explicitly

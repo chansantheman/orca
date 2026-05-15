@@ -336,7 +336,8 @@ const api = {
     setUnreadDockBadgeCount: (count: number): Promise<void> =>
       ipcRenderer.invoke('app:setUnreadDockBadgeCount', count),
     getFloatingTerminalCwd: (args?: FloatingTerminalCwdRequest): Promise<string> =>
-      ipcRenderer.invoke('app:getFloatingTerminalCwd', args)
+      ipcRenderer.invoke('app:getFloatingTerminalCwd', args),
+    detectMassCodeVault: (): Promise<string | null> => ipcRenderer.invoke('app:detectMassCodeVault')
   },
 
   wsl: {

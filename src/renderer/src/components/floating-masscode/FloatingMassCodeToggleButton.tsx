@@ -1,6 +1,8 @@
 import { ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { MassCodeIconContextMenu } from './MassCodeIconContextMenu'
+import { useAppStore } from '@/store'
 
 export function FloatingMassCodeToggleButton({
   open,
@@ -9,8 +11,18 @@ export function FloatingMassCodeToggleButton({
   open: boolean
   onToggle: () => void
 }): React.JSX.Element {
+  const floatingTerminalEnabled = useAppStore((s) => s.settings?.floatingTerminalEnabled === true)
+  const floatingTerminalTriggerLocation = useAppStore(
+    (s) => s.settings?.floatingTerminalTriggerLocation ?? 'floating-button'
+  )
+  const terminalTogglePresent =
+    floatingTerminalEnabled && floatingTerminalTriggerLocation === 'floating-button'
+
   return (
-    <div className="fixed bottom-8 right-14 z-40">
+    <MassCodeIconContextMenu
+      currentLocation="floating-button"
+      className={`fixed bottom-8 ${terminalTogglePresent ? 'right-14' : 'right-3'} z-40`}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -31,6 +43,6 @@ export function FloatingMassCodeToggleButton({
           sideOffset={6}
         >{`${open ? 'Close' : 'Show'} massCode snippets`}</TooltipContent>
       </Tooltip>
-    </div>
+    </MassCodeIconContextMenu>
   )
 }
