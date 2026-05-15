@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import Markdown from 'react-markdown'
-import rehypeHighlight from 'rehype-highlight'
+import hljs from 'highlight.js/lib/common'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +22,9 @@ import {
   Globe,
   Edit2,
   List,
-  GripHorizontal
+  GripHorizontal,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 import {
   fetchMassCodeData,
@@ -34,9 +35,20 @@ import {
 } from '@/lib/masscode-manager'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import {
+  clampFloatingMassCodeBounds,
+  getDefaultFloatingMassCodeBounds,
+  getMaximizedFloatingMassCodeBounds,
+  type FloatingMassCodePanelBounds
+} from './floating-masscode-panel-bounds'
 
 type NavCategory = 'all' | 'inbox' | 'favorites' | 'trash' | 'folder'
-const NO_DRAG_SELECTOR = 'button,input,textarea,select,a,[role="menuitem"]'
+const FLOATING_MASSCODE_NO_DRAG_SELECTOR =
+  'button,input,textarea,select,a,[role="menuitem"],[data-floating-masscode-no-drag]'
+
+function isFloatingMassCodeDragTarget(target: EventTarget): boolean {
+  return !(target instanceof HTMLElement && target.closest(FLOATING_MASSCODE_NO_DRAG_SELECTOR))
+}
 
 export function FloatingMassCodePanel({
   open,
@@ -53,19 +65,23 @@ export function FloatingMassCodePanel({
   const [selectedType, setSelectedType] = useState<MassCodeType>(1)
   const [selectedNav, setSelectedNav] = useState<NavCategory>('all')
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [bounds, setBounds] = useState<FloatingMassCodePanelBounds>(() =>
+    getDefaultFloatingMassCodeBounds()
+  )
+  const [maximized, setMaximized] = useState(false)
   const [editingSnippet, setEditingSnippet] = useState<Partial<MassCodeExtendedSnippet> | null>(
     null
   )
   const [viewingSnippet, setViewingSnippet] = useState<MassCodeExtendedSnippet | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const boundsRef = useRef({ left: 400, top: 100 })
+  const codeRef = useRef<HTMLElement>(null)
+  const restoreBoundsRef = useRef<FloatingMassCodePanelBounds | null>(null)
   const dragRef = useRef<{
     pointerId: number
     startX: number
     startY: number
-    initialLeft: number
-    initialTop: number
+    left: number
+    top: number
   } | null>(null)
 
   const refreshData = useCallback(() => {
@@ -77,15 +93,37 @@ export function FloatingMassCodePanel({
   useEffect(() => {
     if (open) {
       refreshData()
-      if (typeof window !== 'undefined' && panelRef.current) {
-        const left = Math.max(16, window.innerWidth - 750 - 24)
-        const top = Math.max(36, window.innerHeight - 500 - 84)
-        boundsRef.current = { left, top }
-        panelRef.current.style.left = `${left}px`
-        panelRef.current.style.top = `${top}px`
+      if (!maximized) {
+        setBounds(getDefaultFloatingMassCodeBounds())
       }
     }
-  }, [open, refreshData])
+  }, [maximized, open, refreshData])
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') {
+      return
+    }
+    const handleResize = () => {
+      if (maximized) {
+        setBounds(getMaximizedFloatingMassCodeBounds())
+        return
+      }
+      setBounds((prev) => clampFloatingMassCodeBounds(prev))
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [maximized, open])
+
+  useEffect(() => {
+    if (!viewingSnippet || !codeRef.current) {
+      return
+    }
+    const language = viewingSnippet.language?.trim().toLowerCase() ?? ''
+    codeRef.current.className = language ? `language-${language}` : ''
+    hljs.highlightElement(codeRef.current)
+  }, [viewingSnippet])
 
   const filteredSnippets = useMemo(() => {
     if (!data) {
@@ -123,7 +161,9 @@ export function FloatingMassCodePanel({
     if (!pathPart) {
       return []
     }
-    return data.folders.filter((f) => f.id.toLowerCase().includes(pathPart))
+    return data.folders.filter((f) =>
+      f.id.replaceAll('\\', '/').toLowerCase().includes(pathPart)
+    )
   }, [data, selectedType])
 
   const handleCopy = (s: MassCodeExtendedSnippet) => {
@@ -152,29 +192,54 @@ export function FloatingMassCodePanel({
   }
 
   const handleDragStart = (e: React.PointerEvent) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest(NO_DRAG_SELECTOR)) {
+    if (maximized) {
+      return
+    }
+    if (e.button !== 0 || !isFloatingMassCodeDragTarget(e.target)) {
       return
     }
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      initialLeft: boundsRef.current.left,
-      initialTop: boundsRef.current.top
+      left: bounds.left,
+      top: bounds.top
     }
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
   const handleDragMove = (e: React.PointerEvent) => {
-    if (!dragRef.current || dragRef.current.pointerId !== e.pointerId || !panelRef.current) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) {
       return
     }
-    const left = dragRef.current.initialLeft + e.clientX - dragRef.current.startX
-    const top = dragRef.current.initialTop + e.clientY - dragRef.current.startY
-    boundsRef.current = { left, top }
-    panelRef.current.style.left = `${left}px`
-    panelRef.current.style.top = `${top}px`
+    setBounds((prev) =>
+      clampFloatingMassCodeBounds({
+        ...prev,
+        left: drag.left + e.clientX - drag.startX,
+        top: drag.top + e.clientY - drag.startY
+      })
+    )
   }
+
+  const handleDragEnd = (e: React.PointerEvent) => {
+    if (dragRef.current?.pointerId === e.pointerId) {
+      dragRef.current = null
+    }
+  }
+
+  const toggleMaximized = useCallback(() => {
+    setMaximized((current) => {
+      if (current) {
+        setBounds(restoreBoundsRef.current ?? getDefaultFloatingMassCodeBounds())
+        restoreBoundsRef.current = null
+        return false
+      }
+      restoreBoundsRef.current = bounds
+      setBounds(getMaximizedFloatingMassCodeBounds())
+      return true
+    })
+  }, [bounds])
 
   const resolvedThemeClass =
     theme === 'system'
@@ -194,22 +259,36 @@ export function FloatingMassCodePanel({
     actionIcon?: React.ReactNode,
     onAction?: () => void
   ) => (
-    <div
-      className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
-      onPointerDown={handleDragStart}
-      onPointerMove={handleDragMove}
-      onPointerUp={() => {
-        dragRef.current = null
-      }}
-    >
-      <div className="flex items-center gap-2">
+      <div
+        className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
+        onDoubleClick={(e) => {
+          if (e.button !== 0 || !isFloatingMassCodeDragTarget(e.target)) {
+            return
+          }
+          e.preventDefault()
+          toggleMaximized()
+        }}
+      >
+        <div className="flex items-center gap-2" data-floating-masscode-no-drag>
         <Button variant="ghost" size="icon-xs" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
         </Button>
         <span className="text-xs font-medium truncate max-w-[400px]">{title}</span>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" data-floating-masscode-no-drag>
         <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={toggleMaximized}
+          aria-label={maximized ? 'Restore panel size' : 'Maximize panel'}
+        >
+          {maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+        </Button>
         {actionIcon && (
           <Button variant="ghost" size="icon-xs" onClick={onAction}>
             {actionIcon}
@@ -223,12 +302,10 @@ export function FloatingMassCodePanel({
   )
 
   if (viewingSnippet) {
-    const highlightContent = `\`\`\`${viewingSnippet.language || ''}\n${viewingSnippet.content}\n\`\`\``
     return (
       <div
-        ref={panelRef}
         className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-200 w-[750px] h-[500px]"
-        style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
+        style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       >
         {renderHeader(
           viewingSnippet.name,
@@ -267,11 +344,11 @@ export function FloatingMassCodePanel({
               </span>
             ))}
           </div>
-          <ScrollArea className="flex-1 px-4 py-3">
-            <div className="markdown-body text-[11px] leading-relaxed">
-              <Markdown rehypePlugins={[rehypeHighlight]}>{highlightContent}</Markdown>
-            </div>
-          </ScrollArea>
+          <div className="flex-1 min-h-0 overflow-auto px-3 py-2">
+            <pre className="min-w-max text-[10px] leading-4 font-mono whitespace-pre text-foreground">
+              <code ref={codeRef}>{viewingSnippet.content}</code>
+            </pre>
+          </div>
         </div>
       </div>
     )
@@ -280,9 +357,8 @@ export function FloatingMassCodePanel({
   if (editingSnippet) {
     return (
       <div
-        ref={panelRef}
         className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden w-[750px] h-[500px]"
-        style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
+        style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       >
         {renderHeader(
           editingSnippet.id ? 'Edit Snippet' : 'New Snippet',
@@ -334,20 +410,18 @@ export function FloatingMassCodePanel({
 
   return (
     <div
-      ref={panelRef}
       className="fixed z-50 flex flex-col bg-background border border-border shadow-2xl rounded-lg overflow-hidden animate-in fade-in duration-300 w-[750px] h-[500px]"
-      style={{ left: boundsRef.current.left, top: boundsRef.current.top }}
+      style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       data-floating-masscode-panel
     >
       <div
         className="flex items-center justify-between p-2 border-b border-border bg-secondary/30 shrink-0 cursor-grab active:cursor-grabbing"
         onPointerDown={handleDragStart}
         onPointerMove={handleDragMove}
-        onPointerUp={() => {
-          dragRef.current = null
-        }}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
       >
-        <div className="flex items-center gap-2 px-2 flex-1">
+        <div className="flex items-center gap-2 px-2 flex-1" data-floating-masscode-no-drag>
           <Search className="size-3.5 text-muted-foreground" />
           <Input
             value={search}
@@ -356,7 +430,7 @@ export function FloatingMassCodePanel({
             className="h-7 border-none bg-transparent focus-visible:ring-0 text-sm p-0 shadow-none"
           />
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" data-floating-masscode-no-drag>
           <GripHorizontal className="size-3.5 text-muted-foreground/30 mr-1" />
           <Button variant="ghost" size="icon-xs" onClick={() => onOpenChange(false)}>
             <X className="size-3.5" />
@@ -470,7 +544,7 @@ export function FloatingMassCodePanel({
                 >
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate">{s.name}</span>
+                      <span className="text-xs font-medium truncate">{s.name}</span>
                       <span className="text-[9px] text-muted-foreground uppercase font-mono px-1 bg-secondary/50 rounded shrink-0">
                         {s.language}
                       </span>
