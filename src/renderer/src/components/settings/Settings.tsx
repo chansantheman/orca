@@ -1043,11 +1043,7 @@ function Settings(): React.JSX.Element {
                   description="New features that are still taking shape. Give them a try."
                   searchEntries={EXPERIMENTAL_PANE_SEARCH_ENTRIES}
                 >
-                  <ExperimentalPane
-                    settings={settings}
-                    updateSettings={updateSettings}
-                    hiddenExperimentalUnlocked={hiddenExperimentalUnlocked}
-                  />
+                  <ExperimentalPane hiddenExperimentalUnlocked={hiddenExperimentalUnlocked} />
                 </SettingsSection>
 
                 {repos.map((repo) => {

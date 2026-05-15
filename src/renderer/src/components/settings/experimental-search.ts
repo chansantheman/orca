@@ -45,6 +45,11 @@ export const EXPERIMENTAL_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
       'env',
       'node_modules'
     ]
+  },
+  {
+    title: 'massCode Integration',
+    description: 'Standalone snippet bridge for massCode (Markdown Vault).',
+    keywords: ['experimental', 'masscode', 'snippets', 'vault', 'markdown', 'integration']
   }
 ]
 
@@ -62,5 +67,6 @@ function findEntry(title: string): SettingsSearchEntry {
 export const EXPERIMENTAL_SEARCH_ENTRY = {
   pet: findEntry('Pet'),
   activity: findEntry('Activity Page'),
-  symlinks: findEntry('Symlinks on worktrees')
+  symlinks: findEntry('Symlinks on worktrees'),
+  masscode: findEntry('massCode Integration')
 } as const

@@ -54,7 +54,10 @@ import {
   FloatingTerminalPanel,
   FloatingTerminalToggleButton
 } from './components/floating-terminal/FloatingTerminalPanel'
+import { FloatingMassCodePanel } from './components/floating-masscode/FloatingMassCodePanel'
+import { FloatingMassCodeToggleButton } from './components/floating-masscode/FloatingMassCodeToggleButton'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
+import { TOGGLE_MASSCODE_PANEL_EVENT } from '@/lib/floating-masscode'
 import { DictationController } from './components/dictation/DictationController'
 import { useGitStatusPolling } from './components/right-sidebar/useGitStatusPolling'
 import { useEditorExternalWatch } from './hooks/useEditorExternalWatch'
@@ -207,6 +210,7 @@ function applyRemoteWorkspacePatchStatus(
 function App(): React.JSX.Element {
   useUnreadDockBadge()
   const [floatingTerminalOpen, setFloatingTerminalOpen] = useState(false)
+  const [floatingMassCodeOpen, setFloatingMassCodeOpen] = useState(false)
 
   // Why: Zustand actions are referentially stable, but each individual
   // useAppStore(s => s.someAction) still registers a subscription that React
@@ -308,6 +312,14 @@ function App(): React.JSX.Element {
     window.addEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
     return () => window.removeEventListener(TOGGLE_FLOATING_TERMINAL_EVENT, toggleFloatingTerminal)
   }, [floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
+
+  useEffect(() => {
+    const toggleMassCode = (): void => {
+      setFloatingMassCodeOpen((open) => !open)
+    }
+    window.addEventListener(TOGGLE_MASSCODE_PANEL_EVENT, toggleMassCode)
+    return () => window.removeEventListener(TOGGLE_MASSCODE_PANEL_EVENT, toggleMassCode)
+  }, [])
 
   useEffect(() => {
     if (!floatingTerminalEnabled) {
@@ -1212,6 +1224,14 @@ function App(): React.JSX.Element {
     }
   }, [activeView, rightSidebarOpen, actions])
 
+  useEffect(() => {
+    if (settings?.experimentalMassCodeVaultPath) {
+      void window.api.fs.authorizeExternalPath({
+        targetPath: settings.experimentalMassCodeVaultPath
+      })
+    }
+  }, [settings?.experimentalMassCodeVaultPath])
+
   return (
     <div
       className="flex flex-col h-screen w-screen overflow-hidden"
@@ -1401,7 +1421,24 @@ function App(): React.JSX.Element {
             ) : null}
           </>
         ) : null}
-        <StatusBar floatingTerminalOpen={floatingTerminalOpen} />
+        {settings?.experimentalMassCode && settings?.experimentalMassCodeVaultPath ? (
+          <>
+            <FloatingMassCodePanel
+              open={floatingMassCodeOpen}
+              onOpenChange={setFloatingMassCodeOpen}
+            />
+            {settings?.massCodeTriggerLocation === 'floating-button' ? (
+              <FloatingMassCodeToggleButton
+                open={floatingMassCodeOpen}
+                onToggle={() => setFloatingMassCodeOpen((open) => !open)}
+              />
+            ) : null}
+          </>
+        ) : null}
+        <StatusBar
+          floatingTerminalOpen={floatingTerminalOpen}
+          floatingMassCodeOpen={floatingMassCodeOpen}
+        />
         {/* Why: NewWorkspaceComposerCard renders Radix <Tooltip>s that crash
             when mounted outside a TooltipProvider ancestor. Keep the global
             composer modal inside this provider so the card renders safely

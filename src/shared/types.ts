@@ -1158,6 +1158,23 @@ export type SetupScriptLaunchMode = 'split-vertical' | 'split-horizontal' | 'new
 /** Direction used when the setup script launch mode is a split. */
 export type SetupSplitDirection = 'vertical' | 'horizontal'
 
+export type MassCodeSnippet = {
+  id: string
+  name: string
+  content: string
+  language: string
+  tags: string[]
+  folderId: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type MassCodeFolder = {
+  id: string
+  name: string
+  parentId: string | null
+}
+
 export type TerminalColorOverrides = {
   foreground?: string
   background?: string
@@ -1305,6 +1322,9 @@ export type GlobalSettings = {
   /** Where the Floating Terminal toggle is shown. Defaults to the floating
    *  button for discoverability. */
   floatingTerminalTriggerLocation: FloatingTerminalTriggerLocation
+  /** Where the massCode toggle is shown. Defaults to the floating
+   *  button for discoverability. */
+  massCodeTriggerLocation: MassCodeTriggerLocation
   diffDefaultView: 'inline' | 'side-by-side'
   notifications: NotificationSettings
   /** When true, a countdown timer is shown after a Claude agent becomes idle,
@@ -1419,6 +1439,13 @@ export type GlobalSettings = {
    *  configuration surface and edge cases (conflicts with existing paths,
    *  cleanup on worktree delete) are still being worked out. */
   experimentalWorktreeSymlinks: boolean
+  /** Experimental: whether the massCode integration is enabled. */
+  experimentalMassCode: boolean
+  /** Experimental: path to the local massCode Vault directory. When set,
+   *  enables the floating massCode snippet integration. */
+  experimentalMassCodeVaultPath: string | null
+  /** Number of preview lines to show in the massCode snippet list (0, 1, or 2). */
+  experimentalMassCodePreviewLines: number
   /** Active non-local runtime environment for client-routed RPC. `null`
    *  preserves the current local desktop behavior. */
   activeRuntimeEnvironmentId?: string | null
@@ -1599,6 +1626,7 @@ export type WorktreeCardProperty =
 
 export type StatusBarItem = 'claude' | 'codex' | 'gemini' | 'opencode-go' | 'ssh' | 'resource-usage'
 export type FloatingTerminalTriggerLocation = 'floating-button' | 'status-bar'
+export type MassCodeTriggerLocation = 'floating-button' | 'status-bar'
 
 export type TaskResumeState = {
   githubMode?: 'items' | 'project'
