@@ -1,4 +1,4 @@
-import { ScrollText } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -23,7 +23,7 @@ export function FloatingMassCodeToggleButton({
             aria-pressed={open}
             onClick={onToggle}
           >
-            <ScrollText className="size-3.5" />
+            <ClipboardList className="size-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent
