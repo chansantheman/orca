@@ -54,6 +54,8 @@ import {
   FloatingTerminalPanel,
   FloatingTerminalToggleButton
 } from './components/floating-terminal/FloatingTerminalPanel'
+import { FloatingMassCodePanel } from './components/floating-masscode/FloatingMassCodePanel'
+import { FloatingMassCodeToggleButton } from './components/floating-masscode/FloatingMassCodeToggleButton'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
 import { DictationController } from './components/dictation/DictationController'
 import { useGitStatusPolling } from './components/right-sidebar/useGitStatusPolling'
@@ -207,6 +209,7 @@ function applyRemoteWorkspacePatchStatus(
 function App(): React.JSX.Element {
   useUnreadDockBadge()
   const [floatingTerminalOpen, setFloatingTerminalOpen] = useState(false)
+  const [floatingMassCodeOpen, setFloatingMassCodeOpen] = useState(false)
 
   // Why: Zustand actions are referentially stable, but each individual
   // useAppStore(s => s.someAction) still registers a subscription that React
@@ -1212,6 +1215,14 @@ function App(): React.JSX.Element {
     }
   }, [activeView, rightSidebarOpen, actions])
 
+  useEffect(() => {
+    if (settings?.experimentalMassCodeVaultPath) {
+      void window.api.fs.authorizeExternalPath({
+        targetPath: settings.experimentalMassCodeVaultPath
+      })
+    }
+  }, [settings?.experimentalMassCodeVaultPath])
+
   return (
     <div
       className="flex flex-col h-screen w-screen overflow-hidden"
@@ -1399,6 +1410,18 @@ function App(): React.JSX.Element {
                 onToggle={() => setFloatingTerminalOpenWithFocus((open) => !open)}
               />
             ) : null}
+          </>
+        ) : null}
+        {settings?.experimentalMassCodeVaultPath ? (
+          <>
+            <FloatingMassCodePanel
+              open={floatingMassCodeOpen}
+              onOpenChange={setFloatingMassCodeOpen}
+            />
+            <FloatingMassCodeToggleButton
+              open={floatingMassCodeOpen}
+              onToggle={() => setFloatingMassCodeOpen((open) => !open)}
+            />
           </>
         ) : null}
         <StatusBar floatingTerminalOpen={floatingTerminalOpen} />

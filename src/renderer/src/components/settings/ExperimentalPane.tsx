@@ -1,6 +1,9 @@
-import type { GlobalSettings } from '../../../../shared/types'
 import { Label } from '../ui/label'
+import { Input } from '../ui/input'
+import { Button } from '../ui/button'
+import { FolderIcon } from 'lucide-react'
 import { useAppStore } from '../../store'
+import { toast } from 'sonner'
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { EXPERIMENTAL_PANE_SEARCH_ENTRIES, EXPERIMENTAL_SEARCH_ENTRY } from './experimental-search'
@@ -9,27 +12,76 @@ import { HiddenExperimentalGroup } from './HiddenExperimentalGroup'
 export { EXPERIMENTAL_PANE_SEARCH_ENTRIES }
 
 type ExperimentalPaneProps = {
-  settings: GlobalSettings
-  updateSettings: (updates: Partial<GlobalSettings>) => void
   /** Hidden-experimental group is only rendered once the user has unlocked
    *  it via Shift-clicking the Experimental sidebar entry. */
   hiddenExperimentalUnlocked?: boolean
 }
 
 export function ExperimentalPane({
-  settings,
-  updateSettings,
   hiddenExperimentalUnlocked = false
 }: ExperimentalPaneProps): React.JSX.Element {
   const searchQuery = useAppStore((s) => s.settingsSearchQuery)
+  const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+
+  if (!settings) {
+    return <div />
+  }
   const showPet = matchesSettingsSearch(searchQuery, [EXPERIMENTAL_SEARCH_ENTRY.pet])
   const showActivity = matchesSettingsSearch(searchQuery, [EXPERIMENTAL_SEARCH_ENTRY.activity])
   const showWorktreeSymlinks = matchesSettingsSearch(searchQuery, [
     EXPERIMENTAL_SEARCH_ENTRY.symlinks
   ])
+  const showMasscode = matchesSettingsSearch(searchQuery, [EXPERIMENTAL_SEARCH_ENTRY.masscode])
+
+  const pickMasscodeVault = async (): Promise<void> => {
+    const path = await window.api.repos.pickDirectory()
+    if (!path) {
+      return
+    }
+    await window.api.fs.authorizeExternalPath({ targetPath: path })
+    toast.success(`Selected vault: ${path}`)
+    await updateSettings({ experimentalMassCodeVaultPath: path })
+  }
 
   return (
     <div className="space-y-4">
+      {showMasscode ? (
+        <SearchableSetting
+          title="massCode Integration"
+          description="Standalone snippet bridge for massCode (Markdown Vault)."
+          keywords={EXPERIMENTAL_SEARCH_ENTRY.masscode.keywords}
+          className="space-y-3 px-1 py-2"
+        >
+          <div className="space-y-3">
+            <div className="min-w-0 shrink space-y-1.5">
+              <Label>massCode Vault Path</Label>
+              <p className="text-xs text-muted-foreground">
+                The absolute path to your massCode Vault directory (v5+ Markdown format). When set,
+                a floating massCode icon will appear in the bottom-right corner.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={settings.experimentalMassCodeVaultPath || ''}
+                placeholder="/Users/name/masscode-vault"
+                onChange={(e) => updateSettings({ experimentalMassCodeVaultPath: e.target.value })}
+                className="h-8"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => void pickMasscodeVault()}
+                className="shrink-0"
+              >
+                <FolderIcon className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        </SearchableSetting>
+      ) : null}
+
       {showPet ? (
         <SearchableSetting
           title="Pet"
